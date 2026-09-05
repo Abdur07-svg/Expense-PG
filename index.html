@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PG Expense Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons (CDN) for minimal modern icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS CDN for Excel Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation (Desktop) / Bottom Nav (Mobile) -->
+        <nav class="navigation">
+            <div class="nav-brand">
+                <i class="ph ph-wallet"></i>
+                <span>Expense PG</span>
+            </div>
+            <ul class="nav-links">
+                <li class="nav-item active" data-target="dashboard">
+                    <i class="ph ph-squares-four"></i>
+                    <span>Dashboard</span>
+                </li>
+                <li class="nav-item" data-target="expenses">
+                    <i class="ph ph-receipt"></i>
+                    <span>Expenses</span>
+                </li>
+                <li class="nav-item" data-target="analysis">
+                    <i class="ph ph-chart-pie-slice"></i>
+                    <span>Analysis</span>
+                </li>
+                <li class="nav-item" data-target="calendar">
+                    <i class="ph ph-calendar"></i>
+                    <span>Calendar</span>
+                </li>
+                <li class="nav-item" data-target="budget">
+                    <i class="ph ph-target"></i>
+                    <span>Budget</span>
+                </li>
+                <li class="nav-item" data-target="income">
+                    <i class="ph ph-money"></i>
+                    <span>Income</span>
+                </li>
+                <li class="nav-item" data-target="settings">
+                    <i class="ph ph-gear"></i>
+                    <span>Settings</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="page-section active">
+                <header class="section-header">
+                    <div>
+                        <h1 class="greeting"><span id="greeting-text">Good Morning</span> 👋 <br><span id="user-name-display" style="color: var(--primary);"></span></h1>
+                        <p class="current-date" id="dashboard-date">September 5, 2026</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="icon-btn theme-toggle" title="Toggle Theme">
+                            <i class="ph ph-moon"></i>
+                        </button>
+                    </div>
+                </header>
+
+                <div class="dashboard-grid">
+                    <!-- Summary Cards -->
+                    <div class="summary-card">
+                        <p class="card-title">Today's Expense</p>
+                        <h2 class="card-value" id="dash-today">₹0</h2>
+                    </div>
+                    <div class="summary-card highlight-card">
+                        <p class="card-title">This Month</p>
+                        <h2 class="card-value" id="dash-month">₹0</h2>
+                    </div>
+                    <div class="summary-card">
+                        <p class="card-title">Remaining Budget</p>
+                        <h2 class="card-value" id="dash-remaining">₹0</h2>
+                    </div>
+                    <div class="summary-card">
+                        <p class="card-title">Average / Day</p>
+                        <h2 class="card-value" id="dash-avg">₹0</h2>
+                    </div>
+                </div>
+
+                <!-- Budget Progress -->
+                <div class="budget-card card">
+                    <div class="budget-header">
+                        <h3>Monthly Budget</h3>
+                        <p id="dash-budget-text">₹0 / ₹0</p>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="dash-budget-progress"></div>
+                    </div>
+                    <p class="progress-text" id="dash-budget-percent">0% used</p>
+                </div>
+
+                <div class="dashboard-two-col">
+                    <!-- Monthly Trend Chart -->
+                    <div class="chart-card card">
+                        <h3>Monthly Spending Trend</h3>
+                        <div class="chart-container">
+                            <canvas id="dashboardTrendChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Top Categories -->
+                    <div class="top-categories-card card">
+                        <h3>Top Categories</h3>
+                        <ul class="top-categories-list" id="dash-top-categories">
+                            <!-- Populated by JS -->
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="dashboard-two-col">
+                    <!-- Previous Month Comparison -->
+                    <div class="comparison-card card">
+                        <h3>Compared to Last Month</h3>
+                        <div class="comparison-details">
+                            <div class="comp-col">
+                                <span class="comp-label">Last Month</span>
+                                <span class="comp-val" id="dash-prev-month">₹0</span>
+                            </div>
+                            <div class="comp-col">
+                                <span class="comp-label">This Month</span>
+                                <span class="comp-val" id="dash-curr-month">₹0</span>
+                            </div>
+                        </div>
+                        <div class="comp-result" id="dash-comp-result">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    
+                    <!-- Smart Insights -->
+                    <div class="insights-card card">
+                        <h3>Smart Insights</h3>
+                        <div class="insights-list" id="dash-insights">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dashboard-two-col">
+                    <!-- Monthly Projection -->
+                    <div class="projection-card card">
+                        <h3>Estimated Monthly Expense</h3>
+                        <h2 class="projection-value" id="dash-projection">₹0</h2>
+                        <p class="projection-sub" id="dash-projection-warn"></p>
+                    </div>
+                    <!-- Recommended Daily Limit -->
+                    <div class="daily-limit-card card">
+                        <h3>Recommended Daily Limit</h3>
+                        <h2 class="limit-value" id="dash-daily-limit">₹0/day</h2>
+                        <p class="limit-sub">for the rest of this month.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Expenses List Section -->
+            <section id="expenses" class="page-section hidden">
+                <header class="section-header">
+                    <h1>Expenses</h1>
+                </header>
+
+                <div class="filters-container card">
+                    <div class="search-box">
+                        <i class="ph ph-magnifying-glass"></i>
+                        <input type="text" id="search-expense" placeholder="Search expenses...">
+                    </div>
+                    <div class="filter-group">
+                        <select id="filter-date">
+                            <option value="all">All Time</option>
+                            <option value="today">Today</option>
+                            <option value="week">This Week</option>
+                            <option value="month" selected>This Month</option>
+                            <option value="prev_month">Previous Month</option>
+                        </select>
+                        <select id="filter-category">
+                            <option value="all">All Categories</option>
+                            <!-- Populated by JS -->
+                        </select>
+                        <select id="sort-expense">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="highest">Highest Amount</option>
+                            <option value="lowest">Lowest Amount</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="expenses-list card" id="expenses-container">
+                    <!-- Populated by JS -->
+                </div>
+            </section>
+
+            <!-- Monthly Analysis Section -->
+            <section id="analysis" class="page-section hidden">
+                <header class="section-header">
+                    <h1>Monthly Analysis</h1>
+                    <select id="analysis-month-select" class="month-selector">
+                        <!-- Populated by JS -->
+                    </select>
+                </header>
+
+                <div class="dashboard-grid">
+                    <div class="summary-card">
+                        <p class="card-title">Total Expense</p>
+                        <h2 class="card-value" id="analysis-total">₹0</h2>
+                    </div>
+                    <div class="summary-card">
+                        <p class="card-title">Transactions</p>
+                        <h2 class="card-value" id="analysis-count">0</h2>
+                    </div>
+                    <div class="summary-card">
+                        <p class="card-title">Avg Daily</p>
+                        <h2 class="card-value" id="analysis-avg">₹0</h2>
+                    </div>
+                    <div class="summary-card">
+                        <p class="card-title">Highest Day</p>
+                        <h2 class="card-value" id="analysis-highest-day-val">₹0</h2>
+                        <p class="card-sub" id="analysis-highest-day-date">-</p>
+                    </div>
+                </div>
+
+                <div class="dashboard-two-col">
+                    <div class="card">
+                        <h3>Category Breakdown</h3>
+                        <div class="chart-container" style="height: 300px;">
+                            <canvas id="categoryDonutChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3>Payment Method</h3>
+                        <div class="chart-container" style="height: 300px;">
+                            <canvas id="paymentPieChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>Weekly Spending</h3>
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="weeklyBarChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Calendar Section -->
+            <section id="calendar" class="page-section hidden">
+                <header class="section-header">
+                    <h1>Calendar</h1>
+                    <div class="calendar-controls">
+                        <button id="cal-prev" class="icon-btn"><i class="ph ph-caret-left"></i></button>
+                        <h2 id="cal-month-year">September 2026</h2>
+                        <button id="cal-next" class="icon-btn"><i class="ph ph-caret-right"></i></button>
+                    </div>
+                </header>
+
+                <div class="calendar-card card">
+                    <div class="calendar-grid-header">
+                        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                    </div>
+                    <div class="calendar-grid" id="calendar-days">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                
+                <div class="calendar-details card" id="calendar-details-card" style="display: none;">
+                    <h3 id="cal-selected-date">Date</h3>
+                    <div class="expenses-list" id="cal-day-expenses">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Budget Section -->
+            <section id="budget" class="page-section hidden">
+                <header class="section-header">
+                    <h1>Budget & Planning</h1>
+                </header>
+
+                <div class="budget-overview card">
+                    <h3>Current Month Budget</h3>
+                    <div class="budget-flex">
+                        <div class="budget-stat">
+                            <span>Total Budget</span>
+                            <h2 id="budget-total-val">₹0</h2>
+                        </div>
+                        <div class="budget-stat">
+                            <span>Spent</span>
+                            <h2 id="budget-spent-val">₹0</h2>
+                        </div>
+                        <div class="budget-stat">
+                            <span>Remaining</span>
+                            <h2 id="budget-rem-val">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container mt-4">
+                        <div class="progress-bar" id="budget-page-progress"></div>
+                    </div>
+                </div>
+
+                <div class="dashboard-two-col">
+                    <div class="card">
+                        <h3>Income vs Expense</h3>
+                        <div class="chart-container" style="height: 250px;">
+                            <canvas id="incomeExpenseChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3>Savings Goal</h3>
+                        <div class="savings-info">
+                            <div class="saving-row">
+                                <span>Target Saving</span>
+                                <span id="saving-target">₹0</span>
+                            </div>
+                            <div class="saving-row">
+                                <span>Current Saving (Income - Exp)</span>
+                                <span id="saving-current">₹0</span>
+                            </div>
+                            <div class="saving-result mt-3" id="saving-status">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>Fixed Expenses (Recurring)</h3>
+                    <div class="expenses-list" id="fixed-expenses-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Income Section -->
+            <section id="income" class="page-section hidden">
+                <header class="section-header">
+                    <h1>Income Management</h1>
+                    <button class="primary-btn" id="btn-add-income"><i class="ph ph-plus"></i> Add Income</button>
+                </header>
+
+                <div class="dashboard-grid">
+                    <div class="summary-card highlight-card">
+                        <p class="card-title">Total Income (This Month)</p>
+                        <h2 class="card-value" id="income-total">₹0</h2>
+                    </div>
+                    <div class="summary-card">
+                        <p class="card-title">Total Expenses</p>
+                        <h2 class="card-value" id="income-expenses">₹0</h2>
+                    </div>
+                    <div class="summary-card">
+                        <p class="card-title">Remaining Money</p>
+                        <h2 class="card-value" id="income-remaining">₹0</h2>
+                    </div>
+                </div>
+
+                <div class="card mt-4">
+                    <h3>Income History</h3>
+                    <div class="expenses-list" id="income-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings" class="page-section hidden">
+                <header class="section-header">
+                    <h1>Settings</h1>
+                </header>
+
+                <div class="settings-grid">
+                    <div class="card">
+                        <h3>Profile Settings</h3>
+                        <div class="form-group">
+                            <label>Your Name</label>
+                            <input type="text" id="setting-name" placeholder="e.g. Rahul">
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>Financial Goals</h3>
+                        <div class="form-group">
+                            <label>Monthly Budget</label>
+                            <input type="number" id="setting-budget" placeholder="e.g. 12000">
+                        </div>
+                        <div class="form-group">
+                            <label>Savings Goal</label>
+                            <input type="number" id="setting-savings" placeholder="e.g. 3000">
+                        </div>
+                        <div class="form-group">
+                            <label>Currency Symbol</label>
+                            <input type="text" id="setting-currency" placeholder="₹" value="₹">
+                        </div>
+                        <button class="primary-btn mt-2" id="btn-save-settings">Save Settings</button>
+                    </div>
+
+                    <div class="card">
+                        <h3>Custom Categories</h3>
+                        <div class="category-add-form">
+                            <input type="text" id="new-category-name" placeholder="Category Name">
+                            <button class="primary-btn" id="btn-add-category">Add</button>
+                        </div>
+                        <ul class="settings-category-list" id="settings-category-list">
+                            <!-- Populated by JS -->
+                        </ul>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Data Management</h3>
+                        <div class="data-actions">
+                            <button class="secondary-btn" id="btn-export-excel"><i class="ph ph-file-xls"></i> Download Data (Excel)</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Floating Action Button -->
+        <button class="fab" id="fab-add-expense" title="Add Expense">
+            <i class="ph ph-plus"></i>
+        </button>
+
+        <!-- Add/Edit Expense Modal -->
+        <div class="modal-overlay" id="expense-modal">
+            <div class="modal-content card">
+                <div class="modal-header">
+                    <h2 id="modal-expense-title">Add Expense</h2>
+                    <button class="icon-btn close-modal" id="btn-close-modal"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="expense-form">
+                        <input type="hidden" id="expense-id">
+                        
+                        <div class="amount-input-wrapper">
+                            <span class="currency-symbol" id="modal-currency">₹</span>
+                            <input type="number" id="expense-amount" placeholder="0" required min="1" step="any">
+                        </div>
+
+                        <div class="quick-amounts">
+                            <button type="button" class="quick-btn" data-val="20">+20</button>
+                            <button type="button" class="quick-btn" data-val="50">+50</button>
+                            <button type="button" class="quick-btn" data-val="100">+100</button>
+                            <button type="button" class="quick-btn" data-val="200">+200</button>
+                            <button type="button" class="quick-btn" data-val="500">+500</button>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="expense-category">Category</label>
+                                <select id="expense-category" required>
+                                    <!-- Populated dynamically -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="expense-date">Date</label>
+                                <input type="date" id="expense-date" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="expense-payment">Payment Method</label>
+                                <select id="expense-payment" required>
+                                    <option value="Cash">Cash</option>
+                                    <option value="UPI">UPI</option>
+                                    <option value="Card">Card</option>
+                                    <option value="Bank">Bank</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="expense-type">Type</label>
+                                <select id="expense-type" required>
+                                    <option value="variable">Variable</option>
+                                    <option value="fixed">Fixed</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="expense-desc">Description (Optional)</label>
+                            <input type="text" id="expense-desc" placeholder="e.g. Chicken roll">
+                        </div>
+
+                        <button type="submit" class="primary-btn w-100 mt-4">Save Expense</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Income Modal -->
+        <div class="modal-overlay" id="income-modal">
+            <div class="modal-content card">
+                <div class="modal-header">
+                    <h2 id="modal-income-title">Add Income</h2>
+                    <button class="icon-btn close-modal" id="btn-close-income-modal"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="income-form">
+                        <input type="hidden" id="income-id">
+                        
+                        <div class="amount-input-wrapper">
+                            <span class="currency-symbol">₹</span>
+                            <input type="number" id="income-amount" placeholder="0" required min="1" step="any">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="income-source">Source</label>
+                            <select id="income-source" required>
+                                <option value="Monthly Allowance">Monthly Allowance</option>
+                                <option value="Family Money">Family Money</option>
+                                <option value="Scholarship">Scholarship</option>
+                                <option value="Part-time Income">Part-time Income</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="income-date">Date</label>
+                            <input type="date" id="income-date" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="income-desc">Note (Optional)</label>
+                            <input type="text" id="income-desc" placeholder="e.g. Pocket money">
+                        </div>
+
+                        <button type="submit" class="primary-btn w-100 mt-4">Save Income</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Toast Notification Container -->
+        <div id="toast-container"></div>
+
+        <!-- Onboarding Modal -->
+        <div class="modal-overlay" id="onboarding-modal" style="background-color: var(--bg-main); backdrop-filter: none; z-index: 1000;">
+            <div class="modal-content card" style="max-width: 400px; text-align: center; transform: translateY(0); box-shadow: var(--shadow-lg);">
+                <div class="modal-body" style="padding: 2rem 1rem;">
+                    <i class="ph ph-hand-waving" style="font-size: 4rem; color: var(--primary); margin-bottom: 1rem; display: block;"></i>
+                    <h2 style="margin-bottom: 0.5rem; font-size: 1.5rem;">Welcome to Expense PG</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: 2rem;">Let's get started by knowing your name.</p>
+                    
+                    <form id="onboarding-form">
+                        <div class="form-group" style="text-align: left;">
+                            <input type="text" id="onboarding-name" placeholder="Enter your name" required autocomplete="off" style="font-size: 1.1rem; padding: 1rem; text-align: center;">
+                        </div>
+                        <button type="submit" class="primary-btn w-100" style="padding: 1rem;">Let's Go!</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Custom Confirm Modal -->
+        <div class="modal-overlay" id="confirm-modal">
+            <div class="modal-content card" style="max-width: 400px; text-align: center;">
+                <div class="modal-body" style="padding: 1rem 0;">
+                    <i class="ph ph-warning-circle" style="font-size: 4rem; color: var(--danger); margin-bottom: 1rem; display: block;"></i>
+                    <h2 id="confirm-title" style="margin-bottom: 0.5rem;">Are you sure?</h2>
+                    <p id="confirm-message" style="color: var(--text-secondary); margin-bottom: 1.5rem;">This action cannot be undone.</p>
+                    
+                    <div style="display: flex; gap: 1rem; justify-content: center;">
+                        <button class="secondary-btn" id="btn-confirm-cancel">Cancel</button>
+                        <button class="danger-btn" id="btn-confirm-ok">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
