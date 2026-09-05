@@ -2,7 +2,10 @@
 <html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>PG Expense Manager</title>
     <link rel="stylesheet" href="style.css">
     <!-- Google Fonts: Inter -->
@@ -17,6 +20,72 @@
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
+    <!-- Mobile Drawer Overlay & Panel -->
+    <div class="drawer-overlay" id="drawer-overlay"></div>
+    <aside class="mobile-drawer" id="mobile-drawer" aria-label="Mobile Navigation Drawer">
+        <div class="drawer-header">
+            <div class="drawer-brand">
+                <i class="ph ph-wallet"></i>
+                <span>Expense PG</span>
+            </div>
+            <button class="icon-btn" id="btn-close-drawer" title="Close Menu" aria-label="Close Menu">
+                <i class="ph ph-x"></i>
+            </button>
+        </div>
+        
+        <div class="drawer-user-info">
+            <div class="drawer-user-avatar">
+                <i class="ph ph-user"></i>
+            </div>
+            <div class="drawer-user-details">
+                <span class="drawer-user-sub">Welcome back 👋</span>
+                <span class="drawer-user-name" id="drawer-user-name">User</span>
+            </div>
+        </div>
+
+        <ul class="drawer-nav-list">
+            <li class="drawer-nav-item active" data-target="dashboard">
+                <i class="ph ph-squares-four"></i>
+                <span>Dashboard</span>
+            </li>
+            <li class="drawer-nav-item" data-target="expenses">
+                <i class="ph ph-receipt"></i>
+                <span>Expenses</span>
+            </li>
+            <li class="drawer-nav-item" data-target="analysis">
+                <i class="ph ph-chart-pie-slice"></i>
+                <span>Monthly Analysis</span>
+            </li>
+            <li class="drawer-nav-item" data-target="calendar">
+                <i class="ph ph-calendar"></i>
+                <span>Calendar</span>
+            </li>
+            <li class="drawer-nav-item" data-target="budget">
+                <i class="ph ph-target"></i>
+                <span>Budget & Planning</span>
+            </li>
+            <li class="drawer-nav-item" data-target="income">
+                <i class="ph ph-money"></i>
+                <span>Income Management</span>
+            </li>
+            <li class="drawer-nav-item" data-target="settings">
+                <i class="ph ph-gear"></i>
+                <span>Settings</span>
+            </li>
+        </ul>
+
+        <div class="drawer-footer">
+            <button class="drawer-action-btn" id="drawer-theme-toggle">
+                <i class="ph ph-moon"></i>
+                <span id="drawer-theme-text">Dark Mode</span>
+            </button>
+            <button class="drawer-action-btn" id="drawer-export-btn">
+                <i class="ph ph-file-xls"></i>
+                <span>Download Excel</span>
+            </button>
+        </div>
+    </aside>
+
     <div class="app-container">
         <!-- Sidebar Navigation (Desktop) / Bottom Nav (Mobile) -->
         <nav class="navigation">
@@ -41,17 +110,21 @@
                     <i class="ph ph-calendar"></i>
                     <span>Calendar</span>
                 </li>
-                <li class="nav-item" data-target="budget">
+                <li class="nav-item desktop-only" data-target="budget">
                     <i class="ph ph-target"></i>
                     <span>Budget</span>
                 </li>
-                <li class="nav-item" data-target="income">
+                <li class="nav-item desktop-only" data-target="income">
                     <i class="ph ph-money"></i>
                     <span>Income</span>
                 </li>
-                <li class="nav-item" data-target="settings">
+                <li class="nav-item desktop-only" data-target="settings">
                     <i class="ph ph-gear"></i>
                     <span>Settings</span>
+                </li>
+                <li class="nav-item mobile-only nav-menu-trigger" id="bottom-menu-trigger">
+                    <i class="ph ph-list"></i>
+                    <span>Menu</span>
                 </li>
             </ul>
         </nav>
@@ -67,7 +140,7 @@
                         <p class="current-date" id="dashboard-date">September 5, 2026</p>
                     </div>
                     <div class="header-actions">
-                        <button class="icon-btn theme-toggle" title="Toggle Theme">
+                        <button class="icon-btn theme-toggle" title="Toggle Theme" aria-label="Toggle Theme">
                             <i class="ph ph-moon"></i>
                         </button>
                     </div>
@@ -170,7 +243,10 @@
             <!-- Expenses List Section -->
             <section id="expenses" class="page-section hidden">
                 <header class="section-header">
-                    <h1>Expenses</h1>
+                    <div>
+                        <h1>Expenses</h1>
+                        <p class="current-date">All recorded transactions</p>
+                    </div>
                 </header>
 
                 <div class="filters-container card">
@@ -206,11 +282,20 @@
 
             <!-- Monthly Analysis Section -->
             <section id="analysis" class="page-section hidden">
-                <header class="section-header">
-                    <h1>Monthly Analysis</h1>
-                    <select id="analysis-month-select" class="month-selector">
-                        <!-- Populated by JS -->
-                    </select>
+                <header class="section-header analysis-header">
+                    <div>
+                        <h1>Monthly Analysis</h1>
+                        <p class="current-date" id="analysis-selected-month-label">September 2026</p>
+                    </div>
+                    <div class="header-actions analysis-actions">
+                        <div class="month-select-wrapper">
+                            <i class="ph ph-calendar-blank month-select-icon"></i>
+                            <select id="analysis-month-select" class="month-selector" aria-label="Select month">
+                                <!-- Populated by JS -->
+                            </select>
+                            <i class="ph ph-caret-down month-select-arrow"></i>
+                        </div>
+                    </div>
                 </header>
 
                 <div class="dashboard-grid">
@@ -258,18 +343,23 @@
 
             <!-- Calendar Section -->
             <section id="calendar" class="page-section hidden">
-                <header class="section-header">
-                    <h1>Calendar</h1>
-                    <div class="calendar-controls">
-                        <button id="cal-prev" class="icon-btn"><i class="ph ph-caret-left"></i></button>
-                        <h2 id="cal-month-year">September 2026</h2>
-                        <button id="cal-next" class="icon-btn"><i class="ph ph-caret-right"></i></button>
+                <header class="section-header calendar-header">
+                    <div>
+                        <h1>Calendar</h1>
+                        <p class="current-date">Tap a date to view or add expenses</p>
+                    </div>
+                    <div class="header-actions calendar-header-actions">
+                        <div class="calendar-controls">
+                            <button id="cal-prev" class="icon-btn" title="Previous Month" aria-label="Previous Month"><i class="ph ph-caret-left"></i></button>
+                            <h2 id="cal-month-year">September 2026</h2>
+                            <button id="cal-next" class="icon-btn" title="Next Month" aria-label="Next Month"><i class="ph ph-caret-right"></i></button>
+                        </div>
                     </div>
                 </header>
 
                 <div class="calendar-card card">
                     <div class="calendar-grid-header">
-                        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                        <div title="Sunday">Sun</div><div title="Monday">Mon</div><div title="Tuesday">Tue</div><div title="Wednesday">Wed</div><div title="Thursday">Thu</div><div title="Friday">Fri</div><div title="Saturday">Sat</div>
                     </div>
                     <div class="calendar-grid" id="calendar-days">
                         <!-- Populated by JS -->
@@ -277,8 +367,14 @@
                 </div>
                 
                 <div class="calendar-details card" id="calendar-details-card" style="display: none;">
-                    <h3 id="cal-selected-date">Date</h3>
-                    <div class="expenses-list" id="cal-day-expenses">
+                    <div class="cal-details-header">
+                        <div>
+                            <h3 id="cal-selected-date">Date</h3>
+                            <span class="cal-details-total" id="cal-selected-total">Total: ₹0</span>
+                        </div>
+                        <button class="secondary-btn btn-sm" id="cal-add-expense-btn"><i class="ph ph-plus"></i> Add For This Date</button>
+                    </div>
+                    <div class="expenses-list mt-3" id="cal-day-expenses">
                         <!-- Populated by JS -->
                     </div>
                 </div>
@@ -287,7 +383,10 @@
             <!-- Budget Section -->
             <section id="budget" class="page-section hidden">
                 <header class="section-header">
-                    <h1>Budget & Planning</h1>
+                    <div>
+                        <h1>Budget & Planning</h1>
+                        <p class="current-date">Monthly limits & savings</p>
+                    </div>
                 </header>
 
                 <div class="budget-overview card">
@@ -347,8 +446,13 @@
             <!-- Income Section -->
             <section id="income" class="page-section hidden">
                 <header class="section-header">
-                    <h1>Income Management</h1>
-                    <button class="primary-btn" id="btn-add-income"><i class="ph ph-plus"></i> Add Income</button>
+                    <div>
+                        <h1>Income Management</h1>
+                        <p class="current-date">Allowances & earnings</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="primary-btn" id="btn-add-income"><i class="ph ph-plus"></i> Add Income</button>
+                    </div>
                 </header>
 
                 <div class="dashboard-grid">
@@ -377,7 +481,10 @@
             <!-- Settings Section -->
             <section id="settings" class="page-section hidden">
                 <header class="section-header">
-                    <h1>Settings</h1>
+                    <div>
+                        <h1>Settings</h1>
+                        <p class="current-date">Preferences & customization</p>
+                    </div>
                 </header>
 
                 <div class="settings-grid">
@@ -457,15 +564,23 @@
                             <button type="button" class="quick-btn" data-val="500">+500</button>
                         </div>
 
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="expense-category">Category</label>
-                                <select id="expense-category" required>
-                                    <!-- Populated dynamically -->
-                                </select>
-                            </div>
-                            <div class="form-group">
+                        <div class="form-group">
+                            <label for="expense-category">Category</label>
+                            <select id="expense-category" required>
+                                <!-- Populated dynamically -->
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="date-label-row">
                                 <label for="expense-date">Date</label>
+                                <div class="quick-dates">
+                                    <button type="button" class="quick-date-btn active" id="btn-expense-date-today" data-target="expense-date" data-offset="0">Today</button>
+                                    <button type="button" class="quick-date-btn" id="btn-expense-date-yesterday" data-target="expense-date" data-offset="-1">Yesterday</button>
+                                </div>
+                            </div>
+                            <div class="date-input-wrapper">
+                                <i class="ph ph-calendar-blank date-icon"></i>
                                 <input type="date" id="expense-date" required>
                             </div>
                         </div>
@@ -528,8 +643,17 @@
                         </div>
                         
                         <div class="form-group">
-                            <label for="income-date">Date</label>
-                            <input type="date" id="income-date" required>
+                            <div class="date-label-row">
+                                <label for="income-date">Date</label>
+                                <div class="quick-dates">
+                                    <button type="button" class="quick-date-btn active" id="btn-income-date-today" data-target="income-date" data-offset="0">Today</button>
+                                    <button type="button" class="quick-date-btn" id="btn-income-date-yesterday" data-target="income-date" data-offset="-1">Yesterday</button>
+                                </div>
+                            </div>
+                            <div class="date-input-wrapper">
+                                <i class="ph ph-calendar-blank date-icon"></i>
+                                <input type="date" id="income-date" required>
+                            </div>
                         </div>
 
                         <div class="form-group">
