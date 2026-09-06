@@ -1777,3 +1777,141 @@ ul {
         font-size: 1.15rem;
     }
 }
+
+/* ==========================================================================
+   Printable Monthly Statement & PDF Report
+   ========================================================================== */
+.printable-statement {
+    display: none;
+}
+
+@media print {
+    body {
+        background: white !important;
+        color: black !important;
+        font-size: 12pt;
+    }
+
+    .app-container, .navigation, .mobile-drawer, .drawer-overlay, .fab, .modal-overlay, #toast-container {
+        display: none !important;
+    }
+
+    .printable-statement {
+        display: block !important;
+        padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .statement-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 2px solid #4f46e5;
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+    }
+
+    .statement-brand h1 {
+        font-size: 20pt;
+        color: #4f46e5;
+        margin: 0 0 4px 0;
+    }
+
+    .statement-brand p {
+        font-size: 10pt;
+        color: #64748b;
+        margin: 0;
+    }
+
+    .statement-meta {
+        text-align: right;
+        font-size: 10pt;
+    }
+
+    .statement-meta p {
+        margin: 2px 0;
+    }
+
+    .statement-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+
+    .summary-box {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 10px;
+        text-align: center;
+        background-color: #f8fafc;
+    }
+
+    .summary-box span {
+        font-size: 9pt;
+        color: #64748b;
+        display: block;
+        margin-bottom: 4px;
+    }
+
+    .summary-box strong {
+        font-size: 14pt;
+        color: #0f172a;
+    }
+
+    .statement-section-title {
+        font-size: 13pt;
+        font-weight: bold;
+        margin: 18px 0 10px 0;
+        color: #1e293b;
+        border-bottom: 1px solid #cbd5e1;
+        padding-bottom: 4px;
+    }
+
+    .statement-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        font-size: 10pt;
+    }
+
+    .statement-table th {
+        background-color: #f1f5f9;
+        color: #334155;
+        text-align: left;
+        padding: 8px;
+        border-bottom: 2px solid #cbd5e1;
+    }
+
+    .statement-table td {
+        padding: 8px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .statement-table tr:nth-child(even) {
+        background-color: #f8fafc;
+    }
+
+    .statement-footer {
+        margin-top: 40px;
+        padding-top: 15px;
+        border-top: 1px solid #cbd5e1;
+        display: flex;
+        justify-content: space-between;
+        font-size: 9pt;
+        color: #64748b;
+    }
+
+    .statement-signature {
+        text-align: right;
+    }
+
+    .signature-line {
+        width: 160px;
+        border-bottom: 1px solid #000;
+        margin-bottom: 4px;
+        margin-left: auto;
+    }
+}

@@ -1400,6 +1400,49 @@ function setupEventListeners() {
     // Data Actions
     document.getElementById('btn-export-excel').addEventListener('click', exportExcel);
     
+    // Reset All Data
+    const btnResetAll = document.getElementById('btn-reset-all-data');
+    if (btnResetAll) {
+        btnResetAll.addEventListener('click', resetAllData);
+    }
+
+    // Confirmation Modal Actions
+    const btnConfirmOk = document.getElementById('btn-confirm-ok');
+    if (btnConfirmOk) {
+        btnConfirmOk.addEventListener('click', () => {
+            closeModal('confirm-modal');
+            if (confirmCallback) {
+                confirmCallback();
+                confirmCallback = null;
+            }
+        });
+    }
+
+    const btnConfirmCancel = document.getElementById('btn-confirm-cancel');
+    if (btnConfirmCancel) {
+        btnConfirmCancel.addEventListener('click', () => {
+            closeModal('confirm-modal');
+            confirmCallback = null;
+        });
+    }
+
+    // Monthly PDF Report Generation
+    const btnPrintAnalysis = document.getElementById('btn-print-analysis');
+    if (btnPrintAnalysis) {
+        btnPrintAnalysis.addEventListener('click', () => {
+            const selectedMonth = document.getElementById('analysis-month-select').value;
+            generateMonthlyPDFReport(selectedMonth);
+        });
+    }
+
+    const drawerPdfReportBtn = document.getElementById('drawer-pdf-report-btn');
+    if (drawerPdfReportBtn) {
+        drawerPdfReportBtn.addEventListener('click', () => {
+            closeDrawer();
+            generateMonthlyPDFReport(getMonthKey(new Date()));
+        });
+    }
+
     // Onboarding
     document.getElementById('onboarding-form').addEventListener('submit', (e) => {
         e.preventDefault();
@@ -1412,6 +1455,136 @@ function setupEventListeners() {
             setTimeout(checkSmartAlerts, 1000);
         }
     });
+}
+
+/* ==========================================================================
+   Monthly PDF Summary Statement Generator
+   ========================================================================== */
+function generateMonthlyPDFReport(selectedMonthKey) {
+    const monthKey = selectedMonthKey || document.getElementById('analysis-month-select')?.value || getMonthKey(new Date());
+    const [y, m] = monthKey.split('-').map(Number);
+    const monthDate = new Date(y, m - 1, 1);
+    const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const monthExps = state.expenses.filter(e => e.date && e.date.startsWith(monthKey));
+    const monthIncomes = state.income.filter(i => i.date && i.date.startsWith(monthKey));
+
+    const totalExp = monthExps.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const totalInc = monthIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    const budget = state.settings.budget || 12000;
+    const netSavings = totalInc - totalExp;
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const daysPassed = monthKey === getMonthKey(new Date()) ? Math.max(1, new Date().getDate()) : daysInMonth;
+    const avgDaily = totalExp / daysPassed;
+
+    // Category breakdown
+    const catMap = {};
+    monthExps.forEach(e => {
+        catMap[e.category] = (catMap[e.category] || 0) + Number(e.amount || 0);
+    });
+    const sortedCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+
+    const catRows = sortedCats.map(([cat, amt]) => {
+        const pct = totalExp > 0 ? ((amt / totalExp) * 100).toFixed(1) : 0;
+        return `
+            <tr>
+                <td>${cat}</td>
+                <td style="text-align: right;">${formatCurrency(amt)}</td>
+                <td style="text-align: right;">${pct}%</td>
+            </tr>
+        `;
+    }).join('');
+
+    const expRows = monthExps.map((e, idx) => `
+        <tr>
+            <td>${idx + 1}</td>
+            <td>${formatDate(e.date)}</td>
+            <td>${e.category}</td>
+            <td>${e.description || '-'}</td>
+            <td>${e.paymentMethod || 'Cash'}</td>
+            <td style="text-align: right; font-weight: bold;">${formatCurrency(e.amount)}</td>
+        </tr>
+    `).join('');
+
+    const statementEl = document.getElementById('printable-statement');
+    if (!statementEl) return;
+
+    statementEl.innerHTML = `
+        <div class="statement-header">
+            <div class="statement-brand">
+                <h1>Expense PG</h1>
+                <p>Student Financial Statement & Expense Summary</p>
+            </div>
+            <div class="statement-meta">
+                <p><strong>Student Name:</strong> ${state.settings.userName || 'Student'}</p>
+                <p><strong>Month:</strong> ${monthName}</p>
+                <p><strong>Generated On:</strong> ${formatDate(new Date().toISOString())}</p>
+            </div>
+        </div>
+
+        <div class="statement-summary-grid">
+            <div class="summary-box">
+                <span>Monthly Budget</span>
+                <strong>${formatCurrency(budget)}</strong>
+            </div>
+            <div class="summary-box">
+                <span>Total Income / Allowance</span>
+                <strong style="color: #10b981;">${formatCurrency(totalInc)}</strong>
+            </div>
+            <div class="summary-box">
+                <span>Total Expenses</span>
+                <strong style="color: #ef4444;">${formatCurrency(totalExp)}</strong>
+            </div>
+            <div class="summary-box">
+                <span>Net Balance / Savings</span>
+                <strong style="color: ${netSavings >= 0 ? '#10b981' : '#ef4444'};">${formatCurrency(netSavings)}</strong>
+            </div>
+        </div>
+
+        <div class="statement-section-title">Category-wise Expenditure</div>
+        <table class="statement-table">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th style="text-align: right;">Amount</th>
+                    <th style="text-align: right;">Share (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${catRows || '<tr><td colspan="3" style="text-align:center;">No expenses recorded</td></tr>'}
+            </tbody>
+        </table>
+
+        <div class="statement-section-title">Itemized Transactions (${monthExps.length} records)</div>
+        <table class="statement-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Method</th>
+                    <th style="text-align: right;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${expRows || '<tr><td colspan="6" style="text-align:center;">No transactions recorded for this month</td></tr>'}
+            </tbody>
+        </table>
+
+        <div class="statement-footer">
+            <div>
+                <p>Generated automatically via Expense PG Manager</p>
+                <p>Daily Average: ${formatCurrency(avgDaily)}/day</p>
+            </div>
+            <div class="statement-signature">
+                <div class="signature-line"></div>
+                <p>Verified / Student Signature</p>
+            </div>
+        </div>
+    `;
+
+    window.print();
 }
 
 function openDrawer() {
@@ -1469,6 +1642,40 @@ function syncQuickDateButtons(inputId) {
             btnYesterday.classList.remove('active');
         }
     }
+}
+
+/* ==========================================================================
+   Reset All Data & Confirmation Modal
+   ========================================================================== */
+let confirmCallback = null;
+
+function showConfirmModal(title, message, onConfirm) {
+    document.getElementById('confirm-title').textContent = title || 'Are you sure?';
+    document.getElementById('confirm-message').textContent = message || 'This action cannot be undone.';
+    confirmCallback = onConfirm;
+    openModal('confirm-modal');
+}
+
+function resetAllData() {
+    showConfirmModal(
+        'Reset All Data?',
+        'This will permanently erase all recorded expenses, income, custom categories, and profile settings. Are you sure?',
+        () => {
+            localStorage.clear();
+            state.expenses = [];
+            state.income = [];
+            state.categories = [...DEFAULT_CATEGORIES];
+            state.settings = {
+                budget: 12000,
+                savingsGoal: 3000,
+                currency: '₹',
+                theme: 'light',
+                userName: ''
+            };
+            saveData();
+            location.reload();
+        }
+    );
 }
 
 function openModal(id) {

@@ -79,6 +79,10 @@
                 <i class="ph ph-moon"></i>
                 <span id="drawer-theme-text">Dark Mode</span>
             </button>
+            <button class="drawer-action-btn" id="drawer-pdf-report-btn">
+                <i class="ph ph-file-pdf"></i>
+                <span>Monthly PDF Report</span>
+            </button>
             <button class="drawer-action-btn" id="drawer-export-btn">
                 <i class="ph ph-file-xls"></i>
                 <span>Download Excel</span>
@@ -295,6 +299,10 @@
                             </select>
                             <i class="ph ph-caret-down month-select-arrow"></i>
                         </div>
+                        <button class="secondary-btn btn-sm" id="btn-print-analysis" title="Print / Download PDF Report" aria-label="Print Report">
+                            <i class="ph ph-printer"></i>
+                            <span>PDF Report</span>
+                        </button>
                     </div>
                 </header>
 
@@ -526,8 +534,9 @@
                     
                     <div class="card">
                         <h3>Data Management</h3>
-                        <div class="data-actions">
+                        <div class="data-actions" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
                             <button class="secondary-btn" id="btn-export-excel"><i class="ph ph-file-xls"></i> Download Data (Excel)</button>
+                            <button class="danger-btn" id="btn-reset-all-data"><i class="ph ph-trash"></i> Reset All Data</button>
                         </div>
                     </div>
                 </div>
@@ -704,6 +713,11 @@
             </div>
         </div>
         
+        <!-- Hidden Printable Monthly Expense Statement Container -->
+        <div id="printable-statement" class="printable-statement">
+            <!-- Populated dynamically when generating PDF report -->
+        </div>
+
     </div>
 
     <script src="script.js"></script>
