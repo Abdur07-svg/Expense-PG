@@ -25,6 +25,14 @@ let state = {
     expenses: [],
     income: [],
     categories: [...DEFAULT_CATEGORIES],
+    dailyMeals: {}, // Map of monthKey -> mealConfig
+    dailyMealSettings: {
+        name: 'PG Mess / Daily Meals',
+        mealsPerDay: 2,
+        costPerMeal: 50,
+        paymentMethod: 'UPI',
+        category: 'Food'
+    },
     settings: {
         budget: 12000,
         savingsGoal: 3000,
@@ -58,11 +66,15 @@ function loadData() {
     const income = localStorage.getItem('pg_income');
     const categories = localStorage.getItem('pg_categories');
     const settings = localStorage.getItem('pg_settings');
+    const dailyMeals = localStorage.getItem('pg_daily_meals');
+    const dailyMealSettings = localStorage.getItem('pg_daily_meal_settings');
 
     if (expenses) state.expenses = JSON.parse(expenses);
     if (income) state.income = JSON.parse(income);
     if (categories) state.categories = JSON.parse(categories);
     if (settings) state.settings = { ...state.settings, ...JSON.parse(settings) };
+    if (dailyMeals) state.dailyMeals = JSON.parse(dailyMeals);
+    if (dailyMealSettings) state.dailyMealSettings = { ...state.dailyMealSettings, ...JSON.parse(dailyMealSettings) };
 }
 
 function saveData() {
@@ -70,6 +82,8 @@ function saveData() {
     localStorage.setItem('pg_income', JSON.stringify(state.income));
     localStorage.setItem('pg_categories', JSON.stringify(state.categories));
     localStorage.setItem('pg_settings', JSON.stringify(state.settings));
+    localStorage.setItem('pg_daily_meals', JSON.stringify(state.dailyMeals));
+    localStorage.setItem('pg_daily_meal_settings', JSON.stringify(state.dailyMealSettings));
 }
 
 /* ==========================================================================
@@ -443,9 +457,296 @@ function renderDashboardChart() {
 }
 
 /* ==========================================================================
+   Daily Meal Expense Logic & Helpers
+   ========================================================================== */
+function getDaysInSpecificMonth(year, month) {
+    // month is 1-indexed (1 to 12)
+    return new Date(year, month, 0).getDate();
+}
+
+function getActiveMonthKey() {
+    const filterDate = document.getElementById('filter-date')?.value;
+    const now = new Date();
+    if (filterDate === 'prev_month') {
+        const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        return getMonthKey(prev);
+    }
+    return getMonthKey(now);
+}
+
+function updateDailyMealLiveCalc() {
+    const mealCount = Math.max(1, parseInt(document.getElementById('meal-count')?.value, 10) || 1);
+    const mealCost = Math.max(0, parseFloat(document.getElementById('meal-cost')?.value) || 0);
+    const mealDays = Math.max(1, parseInt(document.getElementById('meal-days')?.value, 10) || 1);
+    
+    const total = Math.round(mealCount * mealCost * mealDays);
+    const currency = state.settings.currency || '₹';
+
+    const formulaEl = document.getElementById('live-calc-formula');
+    if (formulaEl) {
+        formulaEl.textContent = `${mealCount} ${mealCount === 1 ? 'meal' : 'meals'}/day × ${currency}${mealCost} × ${mealDays} days`;
+    }
+
+    const totalEl = document.getElementById('live-calc-total');
+    if (totalEl) {
+        totalEl.textContent = formatCurrency(total);
+    }
+
+    const currLabel = document.getElementById('meal-currency-label');
+    if (currLabel) {
+        currLabel.textContent = currency;
+    }
+}
+
+function openDailyMealModal(monthKey) {
+    const now = new Date();
+    const targetMonthKey = monthKey || getActiveMonthKey();
+    const [y, m] = targetMonthKey.split('-').map(Number);
+    const daysInMonth = getDaysInSpecificMonth(y, m);
+
+    // Check if configuration exists for this month
+    let config = state.dailyMeals[targetMonthKey];
+    if (!config) {
+        const existingExp = state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(targetMonthKey));
+        if (existingExp && existingExp.mealConfig) {
+            config = existingExp.mealConfig;
+        }
+    }
+
+    const modalTitle = document.getElementById('modal-daily-meal-title');
+    const nameInput = document.getElementById('meal-name');
+    const countInput = document.getElementById('meal-count');
+    const costInput = document.getElementById('meal-cost');
+    const monthInput = document.getElementById('meal-month');
+    const daysInput = document.getElementById('meal-days');
+    const paymentSelect = document.getElementById('meal-payment');
+    const categorySelect = document.getElementById('meal-category');
+    const btnDelete = document.getElementById('btn-delete-daily-meal');
+
+    if (monthInput) monthInput.value = targetMonthKey;
+
+    if (config) {
+        if (modalTitle) modalTitle.textContent = 'Edit Daily Meal Expense';
+        if (nameInput) nameInput.value = config.name || 'PG Mess / Daily Meals';
+        if (countInput) countInput.value = config.mealsPerDay || 2;
+        if (costInput) costInput.value = config.costPerMeal || 50;
+        if (daysInput) daysInput.value = config.days || daysInMonth;
+        if (paymentSelect && config.paymentMethod) paymentSelect.value = config.paymentMethod;
+        if (categorySelect && config.category) categorySelect.value = config.category;
+        if (btnDelete) btnDelete.style.display = 'inline-flex';
+    } else {
+        if (modalTitle) modalTitle.textContent = 'Daily Meal Expense';
+        if (nameInput) nameInput.value = state.dailyMealSettings.name || 'PG Mess / Daily Meals';
+        if (countInput) countInput.value = state.dailyMealSettings.mealsPerDay || 2;
+        if (costInput) costInput.value = state.dailyMealSettings.costPerMeal || 50;
+        if (daysInput) daysInput.value = daysInMonth;
+        if (paymentSelect) paymentSelect.value = state.dailyMealSettings.paymentMethod || 'UPI';
+        if (categorySelect) categorySelect.value = state.dailyMealSettings.category || 'Food';
+        if (btnDelete) btnDelete.style.display = 'none';
+    }
+
+    // Update preset pills active state
+    if (nameInput) {
+        document.querySelectorAll('.preset-tag').forEach(tag => {
+            if (tag.dataset.val === nameInput.value) tag.classList.add('active');
+            else tag.classList.remove('active');
+        });
+    }
+
+    // Update stepper pills active state
+    if (countInput) {
+        document.querySelectorAll('.stepper-btn').forEach(btn => {
+            if (btn.dataset.val === String(countInput.value)) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+    }
+
+    updateDailyMealLiveCalc();
+    openModal('daily-meal-modal');
+}
+
+function saveDailyMealExpense(e) {
+    e.preventDefault();
+
+    const name = document.getElementById('meal-name').value.trim() || 'PG Mess / Daily Meals';
+    const mealsPerDay = Math.max(1, parseInt(document.getElementById('meal-count').value, 10) || 2);
+    const costPerMeal = Math.max(0, parseFloat(document.getElementById('meal-cost').value) || 0);
+    const monthKey = document.getElementById('meal-month').value || getMonthKey(new Date());
+    const days = Math.max(1, parseInt(document.getElementById('meal-days').value, 10) || 30);
+    const paymentMethod = document.getElementById('meal-payment').value || 'UPI';
+    const category = document.getElementById('meal-category').value || 'Food';
+
+    if (costPerMeal <= 0) {
+        showToast('Cost per meal must be greater than 0', 'error');
+        return;
+    }
+
+    const totalAmount = Math.round(mealsPerDay * costPerMeal * days);
+    const description = `${name} (${mealsPerDay} meals/day × ${state.settings.currency}${costPerMeal} × ${days} days)`;
+
+    // Check if an existing daily meal expense exists for this month
+    let existingIndex = state.expenses.findIndex(exp => exp.isDailyMeal && exp.date && exp.date.startsWith(monthKey));
+
+    const mealConfig = {
+        name,
+        mealsPerDay,
+        costPerMeal,
+        days,
+        month: monthKey,
+        paymentMethod,
+        category,
+        totalAmount
+    };
+
+    if (existingIndex > -1) {
+        const existingExp = state.expenses[existingIndex];
+        state.expenses[existingIndex] = {
+            ...existingExp,
+            amount: totalAmount,
+            category: category,
+            description: description,
+            paymentMethod: paymentMethod,
+            type: 'fixed',
+            isDailyMeal: true,
+            mealConfig: mealConfig
+        };
+    } else {
+        const newExp = {
+            id: Date.now(),
+            amount: totalAmount,
+            category: category,
+            date: `${monthKey}-01`,
+            paymentMethod: paymentMethod,
+            type: 'fixed',
+            description: description,
+            isDailyMeal: true,
+            mealConfig: mealConfig
+        };
+        state.expenses.push(newExp);
+    }
+
+    // Save to state.dailyMeals map
+    state.dailyMeals[monthKey] = mealConfig;
+
+    // Save default meal preferences
+    state.dailyMealSettings = {
+        name,
+        mealsPerDay,
+        costPerMeal,
+        paymentMethod,
+        category
+    };
+
+    saveData();
+    closeModal('daily-meal-modal');
+    showToast('Daily Meal Expense saved successfully!');
+    renderView(state.currentView);
+}
+
+async function deleteDailyMealPlan(monthKey) {
+    const targetMonth = monthKey || document.getElementById('meal-month')?.value || getMonthKey(new Date());
+    const confirmed = await showConfirm('Remove Daily Meal Plan?', `Delete the daily meal expense plan for ${targetMonth}?`);
+    if (confirmed) {
+        state.expenses = state.expenses.filter(e => !(e.isDailyMeal && e.date && e.date.startsWith(targetMonth)));
+        delete state.dailyMeals[targetMonth];
+        saveData();
+        closeModal('daily-meal-modal');
+        showToast('Daily meal plan removed');
+        renderView(state.currentView);
+    }
+}
+
+function quickAdjustDailyMealDays(monthKey, delta) {
+    const config = state.dailyMeals[monthKey] || state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(monthKey))?.mealConfig;
+    if (!config) return;
+
+    const [y, m] = monthKey.split('-').map(Number);
+    const maxDays = getDaysInSpecificMonth(y, m);
+    const newDays = Math.min(maxDays, Math.max(1, (config.days || maxDays) + delta));
+
+    if (newDays === config.days) return;
+
+    config.days = newDays;
+    config.totalAmount = Math.round(config.mealsPerDay * config.costPerMeal * newDays);
+    const description = `${config.name} (${config.mealsPerDay} meals/day × ${state.settings.currency}${config.costPerMeal} × ${newDays} days)`;
+
+    state.dailyMeals[monthKey] = { ...config };
+
+    // Sync expense item in state.expenses
+    const exp = state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(monthKey));
+    if (exp) {
+        exp.amount = config.totalAmount;
+        exp.description = description;
+        exp.mealConfig = { ...config };
+    }
+
+    saveData();
+    renderView(state.currentView);
+    showToast(`Meal days updated to ${newDays} (${formatCurrency(config.totalAmount)})`);
+}
+
+function renderDailyMealCard() {
+    const container = document.getElementById('daily-meal-card');
+    if (!container) return;
+
+    const monthKey = getActiveMonthKey();
+    const config = state.dailyMeals[monthKey] || state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(monthKey))?.mealConfig;
+
+    if (config) {
+        const formula = `${config.mealsPerDay} meals/day × ${state.settings.currency}${config.costPerMeal} × ${config.days} days`;
+        container.innerHTML = `
+            <div class="daily-meal-card-header">
+                <div class="daily-meal-title-group">
+                    <div class="daily-meal-icon-badge"><i class="ph ph-cooking-pot"></i></div>
+                    <div>
+                        <h3>${config.name || 'PG Mess / Daily Meals'} <span class="meal-badge"><i class="ph ph-repeat"></i> Recurring</span></h3>
+                        <span class="daily-meal-subtitle">Auto-tracked monthly meal expense</span>
+                    </div>
+                </div>
+                <button class="secondary-btn btn-sm" onclick="openDailyMealModal('${monthKey}')">
+                    <i class="ph ph-pencil-simple"></i> Edit Plan
+                </button>
+            </div>
+            <div class="daily-meal-content">
+                <div class="daily-meal-details">
+                    <div class="daily-meal-formula-pill">
+                        <i class="ph ph-receipt"></i> ${formula}
+                    </div>
+                    <div class="daily-meal-total">${formatCurrency(config.totalAmount)} <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);">this month</span></div>
+                </div>
+                <div class="daily-meal-quick-actions">
+                    <span style="font-size: 0.8rem; color: var(--text-secondary);">Days Eaten:</span>
+                    <div class="daily-meal-days-adjust">
+                        <button type="button" title="Reduce days" onclick="quickAdjustDailyMealDays('${monthKey}', -1)">−</button>
+                        <span class="daily-meal-days-val">${config.days}</span>
+                        <button type="button" title="Increase days" onclick="quickAdjustDailyMealDays('${monthKey}', 1)">+</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `
+            <div class="daily-meal-card-header" style="margin-bottom: 0;">
+                <div class="daily-meal-title-group">
+                    <div class="daily-meal-icon-badge"><i class="ph ph-cooking-pot"></i></div>
+                    <div>
+                        <h3>Daily Meal Expense (Recurring)</h3>
+                        <span class="daily-meal-subtitle">Track 2 meals/day or mess food monthly without logging every meal</span>
+                    </div>
+                </div>
+                <button class="primary-btn btn-sm" onclick="openDailyMealModal('${monthKey}')">
+                    <i class="ph ph-plus"></i> Set Up Plan
+                </button>
+            </div>
+        `;
+    }
+}
+
+/* ==========================================================================
    UI Rendering - Expenses List
    ========================================================================== */
 function renderExpensesList() {
+    renderDailyMealCard();
     const container = document.getElementById('expenses-container');
     const search = document.getElementById('search-expense').value.toLowerCase();
     const filterDate = document.getElementById('filter-date').value;
@@ -506,12 +807,18 @@ function renderExpensesList() {
 
     container.innerHTML = '';
     filtered.forEach(exp => {
+        const mealBadge = exp.isDailyMeal ? `<span class="meal-badge"><i class="ph ph-cooking-pot"></i> Daily Meal</span>` : '';
+        const editAction = exp.isDailyMeal 
+            ? `openDailyMealModal('${exp.date.substring(0, 7)}')` 
+            : `editExpense(${exp.id})`;
+        const iconClass = exp.isDailyMeal ? 'ph-cooking-pot' : getIconForCategory(exp.category);
+
         container.innerHTML += `
             <div class="expense-item">
                 <div class="expense-left">
-                    <div class="cat-icon"><i class="ph ${getIconForCategory(exp.category)}"></i></div>
+                    <div class="cat-icon"><i class="ph ${iconClass}"></i></div>
                     <div class="expense-details">
-                        <span class="expense-title">${exp.description || exp.category}</span>
+                        <span class="expense-title">${exp.description || exp.category} ${mealBadge}</span>
                         <div class="expense-meta">
                             <span>${formatDate(exp.date)}</span> • 
                             <span>${exp.category}</span> • 
@@ -522,8 +829,8 @@ function renderExpensesList() {
                 <div class="expense-right">
                     <span class="expense-amount">${formatCurrency(exp.amount)}</span>
                     <div class="expense-actions">
-                        <button class="action-btn" onclick="editExpense(${exp.id})"><i class="ph ph-pencil-simple"></i></button>
-                        <button class="action-btn delete" onclick="deleteExpense(${exp.id})"><i class="ph ph-trash"></i></button>
+                        <button class="action-btn" title="Edit" onclick="${editAction}"><i class="ph ph-pencil-simple"></i></button>
+                        <button class="action-btn delete" title="Delete" onclick="deleteExpense(${exp.id})"><i class="ph ph-trash"></i></button>
                     </div>
                 </div>
             </div>
@@ -1029,16 +1336,23 @@ function renderCategorySettings() {
 function populateCategoryDropdowns() {
     const addSelect = document.getElementById('expense-category');
     const filterSelect = document.getElementById('filter-category');
+    const mealSelect = document.getElementById('meal-category');
     
     let opts = '';
     state.categories.forEach(c => {
         opts += `<option value="${c.name}">${c.name}</option>`;
     });
     
-    addSelect.innerHTML = opts;
+    if (addSelect) addSelect.innerHTML = opts;
+    if (mealSelect) {
+        mealSelect.innerHTML = opts;
+        if (state.categories.some(c => c.name === 'Food')) {
+            mealSelect.value = 'Food';
+        }
+    }
     
     // Keep 'All' in filter
-    filterSelect.innerHTML = '<option value="all">All Categories</option>' + opts;
+    if (filterSelect) filterSelect.innerHTML = '<option value="all">All Categories</option>' + opts;
 }
 
 /* ==========================================================================
@@ -1090,6 +1404,12 @@ function submitExpenseForm(e) {
 function editExpense(id) {
     const exp = state.expenses.find(e => e.id === id);
     if (!exp) return;
+
+    if (exp.isDailyMeal) {
+        const monthKey = exp.mealConfig?.month || exp.date.substring(0, 7);
+        openDailyMealModal(monthKey);
+        return;
+    }
     
     document.getElementById('modal-expense-title').textContent = 'Edit Expense';
     document.getElementById('expense-id').value = exp.id;
@@ -1132,8 +1452,13 @@ function showConfirm(title, message) {
 }
 
 async function deleteExpense(id) {
+    const exp = state.expenses.find(e => e.id === id);
     const confirmed = await showConfirm('Delete Expense?', 'Are you sure you want to delete this expense?');
     if(confirmed) {
+        if (exp && exp.isDailyMeal && exp.date) {
+            const mKey = exp.mealConfig?.month || exp.date.substring(0, 7);
+            delete state.dailyMeals[mKey];
+        }
         state.expenses = state.expenses.filter(e => e.id !== id);
         saveData();
         showToast('Expense deleted');
@@ -1339,6 +1664,96 @@ function setupEventListeners() {
         openModal('income-modal');
     });
     document.getElementById('btn-close-income-modal').addEventListener('click', () => closeModal('income-modal'));
+
+    // Daily Meal Modal Controls
+    const btnOpenDailyMeal = document.getElementById('btn-open-daily-meal');
+    if (btnOpenDailyMeal) {
+        btnOpenDailyMeal.addEventListener('click', () => openDailyMealModal());
+    }
+
+    const linkOpenDailyMeal = document.getElementById('link-open-daily-meal');
+    if (linkOpenDailyMeal) {
+        linkOpenDailyMeal.addEventListener('click', () => {
+            closeModal('expense-modal');
+            openDailyMealModal();
+        });
+    }
+
+    const btnCloseDailyMealModal = document.getElementById('btn-close-daily-meal-modal');
+    if (btnCloseDailyMealModal) {
+        btnCloseDailyMealModal.addEventListener('click', () => closeModal('daily-meal-modal'));
+    }
+
+    const btnCancelDailyMeal = document.getElementById('btn-cancel-daily-meal');
+    if (btnCancelDailyMeal) {
+        btnCancelDailyMeal.addEventListener('click', () => closeModal('daily-meal-modal'));
+    }
+
+    const dailyMealForm = document.getElementById('daily-meal-form');
+    if (dailyMealForm) {
+        dailyMealForm.addEventListener('submit', saveDailyMealExpense);
+    }
+
+    const btnDeleteDailyMeal = document.getElementById('btn-delete-daily-meal');
+    if (btnDeleteDailyMeal) {
+        btnDeleteDailyMeal.addEventListener('click', () => {
+            const m = document.getElementById('meal-month')?.value;
+            deleteDailyMealPlan(m);
+        });
+    }
+
+    // Daily Meal Real-time Calculation & Change Listeners
+    ['meal-count', 'meal-cost', 'meal-days'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', updateDailyMealLiveCalc);
+            input.addEventListener('change', updateDailyMealLiveCalc);
+        }
+    });
+
+    const mealMonthInput = document.getElementById('meal-month');
+    if (mealMonthInput) {
+        mealMonthInput.addEventListener('change', () => {
+            const mVal = mealMonthInput.value;
+            if (mVal) {
+                const [y, m] = mVal.split('-').map(Number);
+                const daysInMonth = getDaysInSpecificMonth(y, m);
+                const daysInput = document.getElementById('meal-days');
+                if (daysInput) {
+                    daysInput.max = daysInMonth;
+                    daysInput.value = daysInMonth;
+                }
+                updateDailyMealLiveCalc();
+            }
+        });
+    }
+
+    // Daily Meal Preset Tags
+    document.querySelectorAll('.preset-tag').forEach(tag => {
+        tag.addEventListener('click', () => {
+            const val = tag.dataset.val;
+            const nameInput = document.getElementById('meal-name');
+            if (nameInput) {
+                nameInput.value = val;
+            }
+            document.querySelectorAll('.preset-tag').forEach(t => t.classList.remove('active'));
+            tag.classList.add('active');
+        });
+    });
+
+    // Daily Meal Stepper Buttons (1, 2, 3 meals)
+    document.querySelectorAll('.stepper-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const val = btn.dataset.val;
+            const countInput = document.getElementById('meal-count');
+            if (countInput) {
+                countInput.value = val;
+                updateDailyMealLiveCalc();
+            }
+            document.querySelectorAll('.stepper-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
 
     // Form Submits
     document.getElementById('expense-form').addEventListener('submit', submitExpenseForm);
@@ -1665,6 +2080,14 @@ function resetAllData() {
             state.expenses = [];
             state.income = [];
             state.categories = [...DEFAULT_CATEGORIES];
+            state.dailyMeals = {};
+            state.dailyMealSettings = {
+                name: 'PG Mess / Daily Meals',
+                mealsPerDay: 2,
+                costPerMeal: 50,
+                paymentMethod: 'UPI',
+                category: 'Food'
+            };
             state.settings = {
                 budget: 12000,
                 savingsGoal: 3000,

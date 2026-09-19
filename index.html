@@ -251,7 +251,18 @@
                         <h1>Expenses</h1>
                         <p class="current-date">All recorded transactions</p>
                     </div>
+                    <div class="header-actions">
+                        <button class="secondary-btn btn-sm" id="btn-open-daily-meal" title="Daily PG Meal Expense" aria-label="Daily PG Meal Expense">
+                            <i class="ph ph-cooking-pot"></i>
+                            <span>Daily Meal Plan</span>
+                        </button>
+                    </div>
                 </header>
+
+                <!-- Daily Meal Expense Card Widget -->
+                <div class="daily-meal-card card" id="daily-meal-card">
+                    <!-- Populated dynamically by JS -->
+                </div>
 
                 <div class="filters-container card">
                     <div class="search-box">
@@ -618,7 +629,112 @@
                             <input type="text" id="expense-desc" placeholder="e.g. Chicken roll">
                         </div>
 
+                        <div class="daily-meal-hint">
+                            <i class="ph ph-cooking-pot"></i>
+                            <span>Tracking recurring PG meals? <a href="javascript:void(0)" id="link-open-daily-meal">Set Daily Meal Plan</a></span>
+                        </div>
+
                         <button type="submit" class="primary-btn w-100 mt-4">Save Expense</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Daily Meal Expense Modal -->
+        <div class="modal-overlay" id="daily-meal-modal">
+            <div class="modal-content card" style="max-width: 480px;">
+                <div class="modal-header">
+                    <div>
+                        <h2 id="modal-daily-meal-title">Daily Meal Expense</h2>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">Recurring monthly PG/Mess meal tracker</p>
+                    </div>
+                    <button class="icon-btn close-modal" id="btn-close-daily-meal-modal"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="daily-meal-form">
+                        <div class="form-group">
+                            <label for="meal-name">Meal Name / Type</label>
+                            <input type="text" id="meal-name" placeholder="e.g. PG Mess Food / Lunch & Dinner" required value="PG Mess / Daily Meals">
+                            <div class="meal-presets-row">
+                                <button type="button" class="preset-tag active" data-val="PG Mess / Daily Meals">PG Mess</button>
+                                <button type="button" class="preset-tag" data-val="Lunch & Dinner">Lunch & Dinner</button>
+                                <button type="button" class="preset-tag" data-val="3 Meals (Breakfast + Lunch + Dinner)">3 Meals</button>
+                                <button type="button" class="preset-tag" data-val="Tiffin Service">Tiffin</button>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="meal-count">Meals per day</label>
+                                <div class="stepper-input-wrapper">
+                                    <input type="number" id="meal-count" min="1" max="10" step="1" value="2" required>
+                                    <div class="stepper-presets">
+                                        <button type="button" class="stepper-btn" data-target="meal-count" data-val="1">1</button>
+                                        <button type="button" class="stepper-btn active" data-target="meal-count" data-val="2">2</button>
+                                        <button type="button" class="stepper-btn" data-target="meal-count" data-val="3">3</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="meal-cost">Cost per meal (<span id="meal-currency-label">₹</span>)</label>
+                                <input type="number" id="meal-cost" min="1" step="any" placeholder="e.g. 50" value="50" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="meal-month">Applicable Month</label>
+                                <input type="month" id="meal-month" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="meal-days">Number of days</label>
+                                <input type="number" id="meal-days" min="1" max="31" step="1" value="30" required>
+                                <small class="field-hint">Adjust if you skipped days or went home</small>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="meal-payment">Payment Method</label>
+                                <select id="meal-payment" required>
+                                    <option value="UPI" selected>UPI</option>
+                                    <option value="Cash">Cash</option>
+                                    <option value="Card">Card</option>
+                                    <option value="Bank">Bank</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="meal-category">Category</label>
+                                <select id="meal-category" required>
+                                    <!-- Populated dynamically -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Real-time Live Calculation Box -->
+                        <div class="live-calc-box">
+                            <div class="live-calc-header">
+                                <div class="live-calc-title">
+                                    <i class="ph ph-calculator"></i>
+                                    <span>Calculated Monthly Expense</span>
+                                </div>
+                                <span class="live-calc-formula" id="live-calc-formula">2 meals × ₹50 × 30 days</span>
+                            </div>
+                            <div class="live-calc-total">
+                                <span class="total-label">Monthly Total:</span>
+                                <span class="total-amount" id="live-calc-total">₹3,000</span>
+                            </div>
+                        </div>
+
+                        <div class="modal-form-actions">
+                            <button type="button" class="danger-btn btn-sm" id="btn-delete-daily-meal" style="display: none;">
+                                <i class="ph ph-trash"></i> Remove Plan
+                            </button>
+                            <div style="display: flex; gap: 0.5rem; flex: 1; justify-content: flex-end;">
+                                <button type="button" class="secondary-btn" id="btn-cancel-daily-meal">Cancel</button>
+                                <button type="submit" class="primary-btn" id="btn-save-daily-meal">Save Meal Plan</button>
+                            </div>
+                        </div>
                     </form>
                 </div>
             </div>

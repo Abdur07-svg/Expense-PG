@@ -1779,6 +1779,335 @@ ul {
 }
 
 /* ==========================================================================
+   Daily Meal Expense Feature
+   ========================================================================== */
+.daily-meal-card {
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.06) 0%, rgba(16, 185, 129, 0.04) 100%), var(--bg-card);
+    border: 1px solid rgba(79, 70, 229, 0.2);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition);
+}
+
+[data-theme="dark"] .daily-meal-card {
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.12) 0%, rgba(16, 185, 129, 0.08) 100%), var(--bg-card);
+    border-color: rgba(99, 102, 241, 0.3);
+}
+
+.daily-meal-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+
+.daily-meal-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.daily-meal-icon-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--primary), #818cf8);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    box-shadow: 0 4px 10px rgba(79, 70, 229, 0.25);
+    flex-shrink: 0;
+}
+
+.daily-meal-title-group h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.daily-meal-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    display: block;
+    margin-top: 0.2rem;
+}
+
+.daily-meal-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    background: var(--bg-main);
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+}
+
+.daily-meal-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.daily-meal-formula-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(79, 70, 229, 0.1);
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-full);
+    width: fit-content;
+}
+
+.daily-meal-total {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.daily-meal-quick-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.daily-meal-days-adjust {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--bg-card);
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-color);
+    font-size: 0.8rem;
+}
+
+.daily-meal-days-adjust button {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.85rem;
+    transition: var(--transition);
+}
+
+.daily-meal-days-adjust button:hover {
+    background: var(--primary);
+    color: white;
+}
+
+.daily-meal-days-val {
+    font-weight: 700;
+    min-width: 24px;
+    text-align: center;
+}
+
+.daily-meal-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 0.85rem;
+    background: rgba(79, 70, 229, 0.08);
+    border-radius: var(--radius-sm);
+    border: 1px dashed rgba(79, 70, 229, 0.3);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 1rem 0;
+}
+
+.daily-meal-hint i {
+    color: var(--primary);
+    font-size: 1.15rem;
+    flex-shrink: 0;
+}
+
+.daily-meal-hint a {
+    color: var(--primary);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.daily-meal-hint a:hover {
+    text-decoration: underline;
+}
+
+/* Modal Specific: Presets, Live Calculation, Steppers */
+.meal-presets-row {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.4rem;
+}
+
+.preset-tag {
+    padding: 0.25rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-color);
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    transition: var(--transition);
+    cursor: pointer;
+}
+
+.preset-tag:hover, .preset-tag.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.stepper-input-wrapper {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.stepper-input-wrapper input {
+    width: 65px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.stepper-presets {
+    display: flex;
+    gap: 0.25rem;
+    flex: 1;
+}
+
+.stepper-btn {
+    flex: 1;
+    padding: 0.55rem 0.2rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    text-align: center;
+    transition: var(--transition);
+}
+
+.stepper-btn:hover, .stepper-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.field-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: block;
+    margin-top: 0.25rem;
+}
+
+/* Live Calc Box */
+.live-calc-box {
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
+    border: 1.5px solid rgba(79, 70, 229, 0.3);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.15rem;
+    margin: 1.25rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.08);
+}
+
+.live-calc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.live-calc-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.live-calc-formula {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    background: var(--bg-card);
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-color);
+}
+
+.live-calc-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.35rem;
+    border-top: 1px dashed rgba(79, 70, 229, 0.25);
+}
+
+.live-calc-total .total-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.live-calc-total .total-amount {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: var(--primary);
+}
+
+.modal-form-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Expense item meal badge */
+.meal-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #4f46e5;
+    background: rgba(79, 70, 229, 0.12);
+    border-radius: var(--radius-full);
+    margin-left: 0.35rem;
+    vertical-align: middle;
+}
+
+[data-theme="dark"] .meal-badge {
+    color: #a5b4fc;
+    background: rgba(99, 102, 241, 0.2);
+}
+
+/* ==========================================================================
    Printable Monthly Statement & PDF Report
    ========================================================================== */
 .printable-statement {
