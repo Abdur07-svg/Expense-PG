@@ -44,11 +44,20 @@ let state = {
     charts: {} // Store chart instances
 };
 
+let familyData = {
+    received: [],   // { id, amount, date, paymentMethod, utr, note, createdAt }
+    roomRent: [],   // { id, month, amount, date, paymentMethod, utr, paidTo, note, createdAt }
+    currentBill: [] // { id, month, amount, date, paymentMethod, utr, paidTo, note, createdAt }
+};
+
+let currentFamilyTab = 'fam-tab-received';
+
 /* ==========================================================================
    Initialization & LocalStorage
    ========================================================================== */
 function init() {
     loadData();
+    loadFamilyData();
     applyTheme(state.settings.theme);
     setupEventListeners();
     populateCategoryDropdowns();
@@ -268,6 +277,7 @@ function renderView(viewName) {
         case 'calendar': renderCalendar(); break;
         case 'budget': renderBudget(); break;
         case 'income': renderIncome(); break;
+        case 'family-transfer': renderFamilyTransferView(); break;
         case 'settings': renderSettings(); break;
     }
 }
@@ -1776,6 +1786,9 @@ function setupEventListeners() {
     // Analysis Month Select
     document.getElementById('analysis-month-select').addEventListener('change', renderAnalysis);
 
+    // Family Transfer Events Setup
+    setupFamilyTransferEventListeners();
+
     // Settings
     document.getElementById('btn-save-settings').addEventListener('click', () => {
         const nameVal = document.getElementById('setting-name').value.trim();
@@ -2095,7 +2108,13 @@ function resetAllData() {
                 theme: 'light',
                 userName: ''
             };
+            familyData = {
+                received: [],
+                roomRent: [],
+                currentBill: []
+            };
             saveData();
+            saveFamilyData();
             location.reload();
         }
     );
@@ -2111,6 +2130,19 @@ function openModal(id) {
         setTimeout(() => document.getElementById('expense-amount').focus(), 100);
     } else if(id === 'income-modal') {
         syncQuickDateButtons('income-date');
+    } else if(id === 'family-received-modal') {
+        const curEl = document.getElementById('fam-received-currency');
+        if (curEl) curEl.textContent = state.settings.currency;
+        syncFamilyQuickDateButtons();
+        setTimeout(() => document.getElementById('fam-received-amount')?.focus(), 100);
+    } else if(id === 'family-rent-modal') {
+        const curEl = document.getElementById('fam-rent-currency');
+        if (curEl) curEl.textContent = state.settings.currency;
+        setTimeout(() => document.getElementById('fam-rent-amount')?.focus(), 100);
+    } else if(id === 'family-bill-modal') {
+        const curEl = document.getElementById('fam-bill-currency');
+        if (curEl) curEl.textContent = state.settings.currency;
+        setTimeout(() => document.getElementById('fam-bill-amount')?.focus(), 100);
     }
 }
 
@@ -2131,6 +2163,1040 @@ function applyTheme(themeName) {
     }
     if (drawerThemeText) {
         drawerThemeText.textContent = themeName === 'dark' ? 'Light Mode' : 'Dark Mode';
+    }
+}
+
+/* ==========================================================================
+   Family Transfer & Mess Payments Feature Implementation (Completely Isolated)
+   ========================================================================== */
+function loadFamilyData() {
+    const raw = localStorage.getItem('pg_family_transfers');
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw);
+            familyData.received = Array.isArray(parsed.received) ? parsed.received : [];
+            familyData.roomRent = Array.isArray(parsed.roomRent) ? parsed.roomRent : [];
+            familyData.currentBill = Array.isArray(parsed.currentBill) ? parsed.currentBill : [];
+        } catch (e) {
+            console.error('Error parsing family transfer data', e);
+        }
+    }
+}
+
+function saveFamilyData() {
+    localStorage.setItem('pg_family_transfers', JSON.stringify(familyData));
+}
+
+function getLocalTimeString(date = new Date()) {
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+}
+
+function parseTime24To12(timeStr) {
+    if (!timeStr) {
+        const now = new Date();
+        let h = now.getHours();
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return { hour: String(h).padStart(2, '0'), minute: m, ampm };
+    }
+    const parts = timeStr.split(':');
+    let h24 = parseInt(parts[0], 10);
+    const m = parts[1] ? String(parseInt(parts[1], 10)).padStart(2, '0') : '00';
+    if (isNaN(h24)) h24 = 12;
+    const ampm = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 || 12;
+    return { hour: String(h12).padStart(2, '0'), minute: m, ampm };
+}
+
+function formatTime12To24(hour12, minute, ampm) {
+    let h = parseInt(hour12, 10);
+    if (isNaN(h)) h = 12;
+    const m = String(parseInt(minute, 10) || 0).padStart(2, '0');
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+}
+
+function setTimePickerValues(prefix, timeStr = null) {
+    const { hour, minute, ampm } = parseTime24To12(timeStr);
+    const hEl = document.getElementById(`${prefix}-time-hour`);
+    const mEl = document.getElementById(`${prefix}-time-minute`);
+    const aEl = document.getElementById(`${prefix}-time-ampm`);
+    const hiddenEl = document.getElementById(`${prefix}-time`);
+    
+    if (hEl) hEl.value = hour;
+    if (mEl) mEl.value = minute;
+    if (aEl) aEl.value = ampm;
+    if (hiddenEl) hiddenEl.value = formatTime12To24(hour, minute, ampm);
+}
+
+function getTimePickerValue(prefix) {
+    const hEl = document.getElementById(`${prefix}-time-hour`);
+    const mEl = document.getElementById(`${prefix}-time-minute`);
+    const aEl = document.getElementById(`${prefix}-time-ampm`);
+    if (!hEl || !mEl || !aEl) return getLocalTimeString();
+    return formatTime12To24(hEl.value, mEl.value, aEl.value);
+}
+
+function formatTime(timeStr) {
+    if (!timeStr) return '';
+    const parts = timeStr.split(':');
+    if (parts.length < 2) return timeStr;
+    const hours = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    if (isNaN(hours) || isNaN(minutes)) return timeStr;
+    
+    const d = new Date();
+    d.setHours(hours, minutes, 0, 0);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTime(dateStr, timeStr) {
+    const formattedDate = formatDate(dateStr);
+    if (!timeStr) return formattedDate;
+    const formattedTime = formatTime(timeStr);
+    return `${formattedDate} • ${formattedTime}`;
+}
+
+function formatMonthName(monthStr) {
+    if (!monthStr) return '-';
+    const parts = monthStr.split('-');
+    if (parts.length < 2) return monthStr;
+    const [y, m] = parts.map(Number);
+    const d = new Date(y, m - 1, 1);
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+function renderFamilyTransferView() {
+    populateFamilyMonthFilter();
+    updateFamilySummaryAndTabs();
+    renderFamilyReceivedList();
+    renderFamilyRentList();
+    renderFamilyBillList();
+}
+
+function populateFamilyMonthFilter() {
+    const filterSelect = document.getElementById('family-month-filter');
+    if (!filterSelect) return;
+    const currentVal = filterSelect.value || 'all';
+
+    // Collect all distinct months
+    const monthsSet = new Set();
+    const currentMonthKey = getMonthKey(new Date());
+    monthsSet.add(currentMonthKey);
+
+    familyData.received.forEach(r => {
+        if (r.date && r.date.length >= 7) monthsSet.add(r.date.substring(0, 7));
+    });
+    familyData.roomRent.forEach(r => {
+        if (r.month) monthsSet.add(r.month);
+        else if (r.date && r.date.length >= 7) monthsSet.add(r.date.substring(0, 7));
+    });
+    familyData.currentBill.forEach(b => {
+        if (b.month) monthsSet.add(b.month);
+        else if (b.date && b.date.length >= 7) monthsSet.add(b.date.substring(0, 7));
+    });
+
+    const sortedMonths = Array.from(monthsSet).sort().reverse();
+
+    filterSelect.innerHTML = `<option value="all">All Time</option>` + sortedMonths.map(m => `
+        <option value="${m}">${formatMonthName(m)}</option>
+    `).join('');
+
+    if (monthsSet.has(currentVal) || currentVal === 'all') {
+        filterSelect.value = currentVal;
+    } else {
+        filterSelect.value = 'all';
+    }
+}
+
+function getSelectedFamilyMonth() {
+    const filterSelect = document.getElementById('family-month-filter');
+    return filterSelect ? filterSelect.value : 'all';
+}
+
+function updateFamilySummaryAndTabs() {
+    const selectedMonth = getSelectedFamilyMonth();
+
+    const filteredReceived = familyData.received.filter(r => selectedMonth === 'all' || (r.date && r.date.startsWith(selectedMonth)));
+    const filteredRent = familyData.roomRent.filter(r => selectedMonth === 'all' || r.month === selectedMonth || (!r.month && r.date && r.date.startsWith(selectedMonth)));
+    const filteredBill = familyData.currentBill.filter(b => selectedMonth === 'all' || b.month === selectedMonth || (!b.month && b.date && b.date.startsWith(selectedMonth)));
+
+    const totalReceived = filteredReceived.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const totalRoomRent = filteredRent.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const totalCurrentBill = filteredBill.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const totalMessPayments = totalRoomRent + totalCurrentBill;
+    const remainingAmount = totalReceived - totalMessPayments;
+
+    // Summary numbers
+    const totalReceivedEl = document.getElementById('fam-total-received');
+    if (totalReceivedEl) totalReceivedEl.textContent = formatCurrency(totalReceived);
+
+    const totalRentEl = document.getElementById('fam-total-rent');
+    if (totalRentEl) totalRentEl.textContent = formatCurrency(totalRoomRent);
+
+    const totalBillEl = document.getElementById('fam-total-bill');
+    if (totalBillEl) totalBillEl.textContent = formatCurrency(totalCurrentBill);
+
+    const totalMessEl = document.getElementById('fam-total-mess');
+    if (totalMessEl) totalMessEl.textContent = formatCurrency(totalMessPayments);
+
+    const remainingEl = document.getElementById('fam-remaining');
+    const remainingCard = document.getElementById('fam-remaining-card');
+    if (remainingEl) {
+        remainingEl.textContent = formatCurrency(remainingAmount);
+    }
+    if (remainingCard) {
+        remainingCard.classList.remove('positive', 'negative');
+        if (remainingAmount > 0) {
+            remainingCard.classList.add('positive');
+        } else if (remainingAmount < 0) {
+            remainingCard.classList.add('negative');
+        }
+    }
+
+    // Tab badges
+    const badgeReceived = document.getElementById('fam-badge-received');
+    if (badgeReceived) badgeReceived.textContent = filteredReceived.length;
+
+    const badgeRent = document.getElementById('fam-badge-rent');
+    if (badgeRent) badgeRent.textContent = filteredRent.length;
+
+    const badgeBill = document.getElementById('fam-badge-bill');
+    if (badgeBill) badgeBill.textContent = filteredBill.length;
+}
+
+function renderFamilyReceivedList() {
+    const container = document.getElementById('fam-received-list');
+    if (!container) return;
+
+    const selectedMonth = getSelectedFamilyMonth();
+    const query = (document.getElementById('search-fam-received')?.value || '').toLowerCase().trim();
+
+    let items = familyData.received.filter(r => selectedMonth === 'all' || (r.date && r.date.startsWith(selectedMonth)));
+
+    if (query) {
+        items = items.filter(r => 
+            (r.utr && r.utr.toLowerCase().includes(query)) ||
+            (r.note && r.note.toLowerCase().includes(query)) ||
+            (r.paymentMethod && r.paymentMethod.toLowerCase().includes(query)) ||
+            (String(r.amount).includes(query))
+        );
+    }
+
+    // Sort by date/time descending
+    items.sort((a, b) => {
+        const dtB = new Date(`${b.date}T${b.time || '00:00'}`);
+        const dtA = new Date(`${a.date}T${a.time || '00:00'}`);
+        return dtB - dtA;
+    });
+
+    if (items.length === 0) {
+        container.innerHTML = `
+            <div class="family-empty-state">
+                <i class="ph ph-hand-coins"></i>
+                <h4>No Money Received Records</h4>
+                <p>Record transfers sent by your father for mess & PG expenses to keep a clean digital proof trail.</p>
+                <button class="primary-btn btn-sm" onclick="openFamilyReceivedModal()">
+                    <i class="ph-bold ph-plus-circle"></i> <span>Record First Transfer</span>
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = items.map(item => `
+        <div class="family-record-item">
+            <div class="family-record-left">
+                <div class="record-icon-badge received-icon">
+                    <i class="ph ph-hand-coins"></i>
+                </div>
+                <div class="record-details">
+                    <div class="record-title-row">
+                        <span class="record-title">${formatCurrency(item.amount)} received</span>
+                        <span class="method-tag">${escapeHtml(item.paymentMethod || 'UPI')}</span>
+                    </div>
+                    <div class="record-meta-row">
+                        <span class="record-meta-item"><i class="ph ph-calendar-blank"></i> ${formatDateTime(item.date, item.time)}</span>
+                        <span class="utr-badge"><i class="ph ph-receipt"></i> UTR: ${escapeHtml(item.utr || 'N/A')}</span>
+                    </div>
+                    ${item.note ? `<p class="record-note-text"><i class="ph ph-note"></i> ${escapeHtml(item.note)}</p>` : ''}
+                </div>
+            </div>
+            <div class="family-record-right">
+                <span class="record-amount received">+${formatCurrency(item.amount)}</span>
+                <div class="record-actions">
+                    <button class="record-action-btn" title="View Details & Proof" onclick="openFamilyDetailsModal('received', '${item.id}')">
+                        <i class="ph ph-eye"></i>
+                    </button>
+                    <button class="record-action-btn" title="Edit Record" onclick="openFamilyReceivedModal('${item.id}')">
+                        <i class="ph ph-pencil-simple"></i>
+                    </button>
+                    <button class="record-action-btn delete" title="Delete Record" onclick="deleteFamilyReceived('${item.id}')">
+                        <i class="ph ph-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderFamilyRentList() {
+    const container = document.getElementById('fam-rent-list');
+    if (!container) return;
+
+    const selectedMonth = getSelectedFamilyMonth();
+    const query = (document.getElementById('search-fam-rent')?.value || '').toLowerCase().trim();
+
+    let items = familyData.roomRent.filter(r => selectedMonth === 'all' || r.month === selectedMonth || (!r.month && r.date && r.date.startsWith(selectedMonth)));
+
+    if (query) {
+        items = items.filter(r => 
+            (r.utr && r.utr.toLowerCase().includes(query)) ||
+            (r.paidTo && r.paidTo.toLowerCase().includes(query)) ||
+            (r.note && r.note.toLowerCase().includes(query)) ||
+            (r.paymentMethod && r.paymentMethod.toLowerCase().includes(query)) ||
+            (r.month && formatMonthName(r.month).toLowerCase().includes(query)) ||
+            (String(r.amount).includes(query))
+        );
+    }
+
+    items.sort((a, b) => {
+        const dtB = new Date(`${b.date}T${b.time || '00:00'}`);
+        const dtA = new Date(`${a.date}T${a.time || '00:00'}`);
+        return dtB - dtA;
+    });
+
+    if (items.length === 0) {
+        container.innerHTML = `
+            <div class="family-empty-state">
+                <i class="ph ph-house"></i>
+                <h4>No Room Rent Records</h4>
+                <p>Record your monthly room rent payments with UTR / Transaction ID proof reference.</p>
+                <button class="primary-btn btn-sm" onclick="openFamilyRentModal()">
+                    <i class="ph-bold ph-plus-circle"></i> <span>Record Room Rent</span>
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = items.map(item => `
+        <div class="family-record-item">
+            <div class="family-record-left">
+                <div class="record-icon-badge rent-icon">
+                    <i class="ph ph-house"></i>
+                </div>
+                <div class="record-details">
+                    <div class="record-title-row">
+                        <span class="record-title">${formatCurrency(item.amount)} — Rent (${formatMonthName(item.month)})</span>
+                        <span class="method-tag">${escapeHtml(item.paymentMethod || 'UPI')}</span>
+                    </div>
+                    <div class="record-meta-row">
+                        <span class="record-meta-item"><i class="ph ph-calendar-blank"></i> ${formatDateTime(item.date, item.time)}</span>
+                        <span class="record-meta-item"><i class="ph ph-user"></i> Paid To: <strong>${escapeHtml(item.paidTo || 'Owner')}</strong></span>
+                        <span class="utr-badge"><i class="ph ph-receipt"></i> UTR: ${escapeHtml(item.utr || 'N/A')}</span>
+                    </div>
+                    ${item.note ? `<p class="record-note-text"><i class="ph ph-note"></i> ${escapeHtml(item.note)}</p>` : ''}
+                </div>
+            </div>
+            <div class="family-record-right">
+                <span class="record-amount paid">-${formatCurrency(item.amount)}</span>
+                <div class="record-actions">
+                    <button class="record-action-btn" title="View Details & Proof" onclick="openFamilyDetailsModal('rent', '${item.id}')">
+                        <i class="ph ph-eye"></i>
+                    </button>
+                    <button class="record-action-btn" title="Edit Record" onclick="openFamilyRentModal('${item.id}')">
+                        <i class="ph ph-pencil-simple"></i>
+                    </button>
+                    <button class="record-action-btn delete" title="Delete Record" onclick="deleteFamilyRent('${item.id}')">
+                        <i class="ph ph-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderFamilyBillList() {
+    const container = document.getElementById('fam-bill-list');
+    if (!container) return;
+
+    const selectedMonth = getSelectedFamilyMonth();
+    const query = (document.getElementById('search-fam-bill')?.value || '').toLowerCase().trim();
+
+    let items = familyData.currentBill.filter(b => selectedMonth === 'all' || b.month === selectedMonth || (!b.month && b.date && b.date.startsWith(selectedMonth)));
+
+    if (query) {
+        items = items.filter(b => 
+            (b.utr && b.utr.toLowerCase().includes(query)) ||
+            (b.paidTo && b.paidTo.toLowerCase().includes(query)) ||
+            (b.note && b.note.toLowerCase().includes(query)) ||
+            (b.paymentMethod && b.paymentMethod.toLowerCase().includes(query)) ||
+            (b.month && formatMonthName(b.month).toLowerCase().includes(query)) ||
+            (String(b.amount).includes(query))
+        );
+    }
+
+    items.sort((a, b) => {
+        const dtB = new Date(`${b.date}T${b.time || '00:00'}`);
+        const dtA = new Date(`${a.date}T${a.time || '00:00'}`);
+        return dtB - dtA;
+    });
+
+    if (items.length === 0) {
+        container.innerHTML = `
+            <div class="family-empty-state">
+                <i class="ph ph-lightning"></i>
+                <h4>No Electricity Bill Records</h4>
+                <p>Record your mess electricity/current bill payments (up to 3 records per month).</p>
+                <button class="primary-btn btn-sm" onclick="openFamilyBillModal()">
+                    <i class="ph-bold ph-plus-circle"></i> <span>Record Current Bill</span>
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = items.map(item => `
+        <div class="family-record-item">
+            <div class="family-record-left">
+                <div class="record-icon-badge bill-icon">
+                    <i class="ph ph-lightning"></i>
+                </div>
+                <div class="record-details">
+                    <div class="record-title-row">
+                        <span class="record-title">${formatCurrency(item.amount)} — Current Bill (${formatMonthName(item.month)})</span>
+                        <span class="method-tag">${escapeHtml(item.paymentMethod || 'UPI')}</span>
+                    </div>
+                    <div class="record-meta-row">
+                        <span class="record-meta-item"><i class="ph ph-calendar-blank"></i> ${formatDateTime(item.date, item.time)}</span>
+                        <span class="record-meta-item"><i class="ph ph-user"></i> Paid To: <strong>${escapeHtml(item.paidTo || 'Owner')}</strong></span>
+                        <span class="utr-badge"><i class="ph ph-receipt"></i> UTR: ${escapeHtml(item.utr || 'N/A')}</span>
+                    </div>
+                    ${item.note ? `<p class="record-note-text"><i class="ph ph-note"></i> ${escapeHtml(item.note)}</p>` : ''}
+                </div>
+            </div>
+            <div class="family-record-right">
+                <span class="record-amount paid">-${formatCurrency(item.amount)}</span>
+                <div class="record-actions">
+                    <button class="record-action-btn" title="View Details & Proof" onclick="openFamilyDetailsModal('bill', '${item.id}')">
+                        <i class="ph ph-eye"></i>
+                    </button>
+                    <button class="record-action-btn" title="Edit Record" onclick="openFamilyBillModal('${item.id}')">
+                        <i class="ph ph-pencil-simple"></i>
+                    </button>
+                    <button class="record-action-btn delete" title="Delete Record" onclick="deleteFamilyBill('${item.id}')">
+                        <i class="ph ph-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Modal Openers & Form Handlers
+function openFamilyReceivedModal(editId = null) {
+    const form = document.getElementById('fam-received-form');
+    if (!form) return;
+    form.reset();
+
+    const titleEl = document.getElementById('modal-fam-received-title');
+    const idInput = document.getElementById('fam-received-id');
+
+    if (editId) {
+        const item = familyData.received.find(r => r.id === editId);
+        if (item) {
+            if (titleEl) titleEl.textContent = 'Edit Money Received';
+            idInput.value = item.id;
+            document.getElementById('fam-received-amount').value = item.amount;
+            document.getElementById('fam-received-date').value = item.date;
+            setTimePickerValues('fam-received', item.time || (item.createdAt ? getLocalTimeString(new Date(item.createdAt)) : getLocalTimeString()));
+            document.getElementById('fam-received-payment').value = item.paymentMethod || 'UPI';
+            document.getElementById('fam-received-utr').value = item.utr || '';
+            document.getElementById('fam-received-note').value = item.note || '';
+        }
+    } else {
+        if (titleEl) titleEl.textContent = 'Record Money Received';
+        idInput.value = '';
+        document.getElementById('fam-received-date').value = getLocalDateString();
+        setTimePickerValues('fam-received', getLocalTimeString());
+        document.getElementById('fam-received-payment').value = 'UPI';
+    }
+
+    openModal('family-received-modal');
+}
+
+function saveFamilyReceived(e) {
+    e.preventDefault();
+    const id = document.getElementById('fam-received-id').value;
+    const amount = parseFloat(document.getElementById('fam-received-amount').value);
+    const date = document.getElementById('fam-received-date').value;
+    const time = getTimePickerValue('fam-received');
+    const paymentMethod = document.getElementById('fam-received-payment').value;
+    const utr = document.getElementById('fam-received-utr').value.trim();
+    const note = document.getElementById('fam-received-note').value.trim();
+
+    if (!amount || amount <= 0 || !date || !utr) {
+        showToast('Please fill in all required fields including UTR.', 'warning');
+        return;
+    }
+
+    if (id) {
+        const idx = familyData.received.findIndex(r => r.id === id);
+        if (idx !== -1) {
+            familyData.received[idx] = {
+                ...familyData.received[idx],
+                amount,
+                date,
+                time,
+                paymentMethod,
+                utr,
+                note,
+                updatedAt: new Date().toISOString()
+            };
+            showToast('Money received record updated');
+        }
+    } else {
+        const newRecord = {
+            id: 'fr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            amount,
+            date,
+            time,
+            paymentMethod,
+            utr,
+            note,
+            createdAt: new Date().toISOString()
+        };
+        familyData.received.unshift(newRecord);
+        showToast('Money received record saved');
+    }
+
+    saveFamilyData();
+    closeModal('family-received-modal');
+    renderFamilyTransferView();
+}
+
+function deleteFamilyReceived(id) {
+    const item = familyData.received.find(r => r.id === id);
+    if (!item) return;
+
+    showConfirmModal(
+        'Delete Received Money Record?',
+        `Are you sure you want to delete the record of ${formatCurrency(item.amount)} (UTR: ${item.utr})? This cannot be undone.`,
+        () => {
+            familyData.received = familyData.received.filter(r => r.id !== id);
+            saveFamilyData();
+            renderFamilyTransferView();
+            showToast('Record deleted');
+        }
+    );
+}
+
+function openFamilyRentModal(editId = null) {
+    const form = document.getElementById('fam-rent-form');
+    if (!form) return;
+    form.reset();
+
+    const titleEl = document.getElementById('modal-fam-rent-title');
+    const idInput = document.getElementById('fam-rent-id');
+
+    if (editId) {
+        const item = familyData.roomRent.find(r => r.id === editId);
+        if (item) {
+            if (titleEl) titleEl.textContent = 'Edit Room Rent Payment';
+            idInput.value = item.id;
+            document.getElementById('fam-rent-amount').value = item.amount;
+            document.getElementById('fam-rent-month').value = item.month || getMonthKey(new Date(item.date));
+            document.getElementById('fam-rent-date').value = item.date;
+            setTimePickerValues('fam-rent', item.time || (item.createdAt ? getLocalTimeString(new Date(item.createdAt)) : getLocalTimeString()));
+            document.getElementById('fam-rent-payment').value = item.paymentMethod || 'UPI';
+            document.getElementById('fam-rent-paid-to').value = item.paidTo || '';
+            document.getElementById('fam-rent-utr').value = item.utr || '';
+            document.getElementById('fam-rent-note').value = item.note || '';
+        }
+    } else {
+        if (titleEl) titleEl.textContent = 'Record Room Rent Payment';
+        idInput.value = '';
+        const now = new Date();
+        document.getElementById('fam-rent-month').value = getMonthKey(now);
+        document.getElementById('fam-rent-date').value = getLocalDateString(now);
+        setTimePickerValues('fam-rent', getLocalTimeString(now));
+        document.getElementById('fam-rent-payment').value = 'UPI';
+        document.getElementById('fam-rent-paid-to').value = 'PG Owner';
+    }
+
+    openModal('family-rent-modal');
+}
+
+function saveFamilyRent(e) {
+    e.preventDefault();
+    const id = document.getElementById('fam-rent-id').value;
+    const amount = parseFloat(document.getElementById('fam-rent-amount').value);
+    const month = document.getElementById('fam-rent-month').value;
+    const date = document.getElementById('fam-rent-date').value;
+    const time = getTimePickerValue('fam-rent');
+    const paymentMethod = document.getElementById('fam-rent-payment').value;
+    const paidTo = document.getElementById('fam-rent-paid-to').value.trim();
+    const utr = document.getElementById('fam-rent-utr').value.trim();
+    const note = document.getElementById('fam-rent-note').value.trim();
+
+    if (!amount || amount <= 0 || !month || !date || !paidTo || !utr) {
+        showToast('Please fill in all required fields.', 'warning');
+        return;
+    }
+
+    if (id) {
+        const idx = familyData.roomRent.findIndex(r => r.id === id);
+        if (idx !== -1) {
+            familyData.roomRent[idx] = {
+                ...familyData.roomRent[idx],
+                amount,
+                month,
+                date,
+                time,
+                paymentMethod,
+                paidTo,
+                utr,
+                note,
+                updatedAt: new Date().toISOString()
+            };
+            showToast('Room rent record updated');
+        }
+    } else {
+        const newRecord = {
+            id: 'frr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            amount,
+            month,
+            date,
+            time,
+            paymentMethod,
+            paidTo,
+            utr,
+            note,
+            createdAt: new Date().toISOString()
+        };
+        familyData.roomRent.unshift(newRecord);
+        showToast('Room rent payment recorded');
+    }
+
+    saveFamilyData();
+    closeModal('family-rent-modal');
+    renderFamilyTransferView();
+}
+
+function deleteFamilyRent(id) {
+    const item = familyData.roomRent.find(r => r.id === id);
+    if (!item) return;
+
+    showConfirmModal(
+        'Delete Room Rent Record?',
+        `Are you sure you want to delete rent record of ${formatCurrency(item.amount)} for ${formatMonthName(item.month)}?`,
+        () => {
+            familyData.roomRent = familyData.roomRent.filter(r => r.id !== id);
+            saveFamilyData();
+            renderFamilyTransferView();
+            showToast('Record deleted');
+        }
+    );
+}
+
+function openFamilyBillModal(editId = null) {
+    const form = document.getElementById('fam-bill-form');
+    if (!form) return;
+    form.reset();
+
+    const titleEl = document.getElementById('modal-fam-bill-title');
+    const idInput = document.getElementById('fam-bill-id');
+
+    if (editId) {
+        const item = familyData.currentBill.find(b => b.id === editId);
+        if (item) {
+            if (titleEl) titleEl.textContent = 'Edit Current Bill Payment';
+            idInput.value = item.id;
+            document.getElementById('fam-bill-amount').value = item.amount;
+            document.getElementById('fam-bill-month').value = item.month || getMonthKey(new Date(item.date));
+            document.getElementById('fam-bill-date').value = item.date;
+            setTimePickerValues('fam-bill', item.time || (item.createdAt ? getLocalTimeString(new Date(item.createdAt)) : getLocalTimeString()));
+            document.getElementById('fam-bill-payment').value = item.paymentMethod || 'UPI';
+            document.getElementById('fam-bill-paid-to').value = item.paidTo || '';
+            document.getElementById('fam-bill-utr').value = item.utr || '';
+            document.getElementById('fam-bill-note').value = item.note || '';
+        }
+    } else {
+        if (titleEl) titleEl.textContent = 'Record Current Bill Payment';
+        idInput.value = '';
+        const now = new Date();
+        document.getElementById('fam-bill-month').value = getMonthKey(now);
+        document.getElementById('fam-bill-date').value = getLocalDateString(now);
+        setTimePickerValues('fam-bill', getLocalTimeString(now));
+        document.getElementById('fam-bill-payment').value = 'UPI';
+        document.getElementById('fam-bill-paid-to').value = 'Mess Owner';
+    }
+
+    openModal('family-bill-modal');
+}
+
+function saveFamilyBill(e) {
+    e.preventDefault();
+    const id = document.getElementById('fam-bill-id').value;
+    const amount = parseFloat(document.getElementById('fam-bill-amount').value);
+    const month = document.getElementById('fam-bill-month').value;
+    const date = document.getElementById('fam-bill-date').value;
+    const time = getTimePickerValue('fam-bill');
+    const paymentMethod = document.getElementById('fam-bill-payment').value;
+    const paidTo = document.getElementById('fam-bill-paid-to').value.trim();
+    const utr = document.getElementById('fam-bill-utr').value.trim();
+    const note = document.getElementById('fam-bill-note').value.trim();
+
+    if (!amount || amount <= 0 || !month || !date || !paidTo || !utr) {
+        showToast('Please fill in all required fields.', 'warning');
+        return;
+    }
+
+    // Constraint: Allow only the required 3 monthly records
+    const existingForMonth = familyData.currentBill.filter(b => b.month === month && b.id !== id);
+    if (existingForMonth.length >= 3) {
+        showToast(`Only 3 current bill records are permitted for ${formatMonthName(month)}.`, 'error');
+        return;
+    }
+
+    if (id) {
+        const idx = familyData.currentBill.findIndex(b => b.id === id);
+        if (idx !== -1) {
+            familyData.currentBill[idx] = {
+                ...familyData.currentBill[idx],
+                amount,
+                month,
+                date,
+                time,
+                paymentMethod,
+                paidTo,
+                utr,
+                note,
+                updatedAt: new Date().toISOString()
+            };
+            showToast('Current bill record updated');
+        }
+    } else {
+        const newRecord = {
+            id: 'fcb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            amount,
+            month,
+            date,
+            time,
+            paymentMethod,
+            paidTo,
+            utr,
+            note,
+            createdAt: new Date().toISOString()
+        };
+        familyData.currentBill.unshift(newRecord);
+        showToast('Current bill payment recorded');
+    }
+
+    saveFamilyData();
+    closeModal('family-bill-modal');
+    renderFamilyTransferView();
+}
+
+function deleteFamilyBill(id) {
+    const item = familyData.currentBill.find(b => b.id === id);
+    if (!item) return;
+
+    showConfirmModal(
+        'Delete Current Bill Record?',
+        `Are you sure you want to delete electricity bill of ${formatCurrency(item.amount)} for ${formatMonthName(item.month)}?`,
+        () => {
+            familyData.currentBill = familyData.currentBill.filter(b => b.id !== id);
+            saveFamilyData();
+            renderFamilyTransferView();
+            showToast('Record deleted');
+        }
+    );
+}
+
+function openFamilyDetailsModal(type, id) {
+    let item = null;
+    let typeBadge = '';
+    let badgeClass = '';
+    let icon = '';
+
+    if (type === 'received') {
+        item = familyData.received.find(r => r.id === id);
+        typeBadge = 'Family Money Received';
+        badgeClass = 'received-icon';
+        icon = 'ph-hand-coins';
+    } else if (type === 'rent') {
+        item = familyData.roomRent.find(r => r.id === id);
+        typeBadge = 'Room Rent Payment';
+        badgeClass = 'rent-icon';
+        icon = 'ph-house';
+    } else if (type === 'bill') {
+        item = familyData.currentBill.find(b => b.id === id);
+        typeBadge = 'Electricity / Current Bill';
+        badgeClass = 'bill-icon';
+        icon = 'ph-lightning';
+    }
+
+    if (!item) return;
+
+    const body = document.getElementById('fam-details-body');
+    if (!body) return;
+
+    body.innerHTML = `
+        <div class="proof-card">
+            <div class="proof-header-badge ${badgeClass}">
+                <i class="ph ${icon}"></i>
+                <span>${typeBadge}</span>
+            </div>
+            <div class="proof-amount-display" style="color: ${type === 'received' ? 'var(--success)' : 'var(--danger)'};">
+                ${type === 'received' ? '+' : '-'}${formatCurrency(item.amount)}
+            </div>
+
+            <div class="proof-grid">
+                ${item.month ? `
+                <div class="proof-field">
+                    <span class="proof-field-label">Applicable Month</span>
+                    <span class="proof-field-val">${formatMonthName(item.month)}</span>
+                </div>` : ''}
+                <div class="proof-field">
+                    <span class="proof-field-label">Date</span>
+                    <span class="proof-field-val">${formatDate(item.date)}</span>
+                </div>
+                <div class="proof-field">
+                    <span class="proof-field-label">Exact Time</span>
+                    <span class="proof-field-val">${item.time ? formatTime(item.time) : '-'}</span>
+                </div>
+                <div class="proof-field">
+                    <span class="proof-field-label">Payment Method</span>
+                    <span class="proof-field-val">${escapeHtml(item.paymentMethod || 'UPI')}</span>
+                </div>
+                ${item.paidTo ? `
+                <div class="proof-field">
+                    <span class="proof-field-label">Paid To</span>
+                    <span class="proof-field-val">${escapeHtml(item.paidTo)}</span>
+                </div>` : `
+                <div class="proof-field">
+                    <span class="proof-field-label">Sender</span>
+                    <span class="proof-field-val">Father</span>
+                </div>`}
+                ${item.note ? `
+                <div class="proof-field" style="grid-column: span 2;">
+                    <span class="proof-field-label">Note / Reference</span>
+                    <span class="proof-field-val">${escapeHtml(item.note)}</span>
+                </div>` : ''}
+            </div>
+
+            <div class="proof-utr-box">
+                <div class="proof-utr-info">
+                    <div class="proof-utr-label"><i class="ph ph-shield-check"></i> Official Payment Proof Reference (UTR)</div>
+                    <div class="proof-utr-val">${escapeHtml(item.utr || 'N/A')}</div>
+                </div>
+                <button type="button" class="copy-utr-btn" id="btn-copy-utr" onclick="copyUtrToClipboard('${escapeAttr(item.utr || '')}')">
+                    <i class="ph ph-copy"></i>
+                    <span>Copy</span>
+                </button>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+            <button type="button" class="secondary-btn w-100" onclick="closeModal('family-details-modal')">Close</button>
+        </div>
+    `;
+
+    openModal('family-details-modal');
+}
+
+function copyUtrToClipboard(utrText) {
+    if (!utrText) return;
+    navigator.clipboard.writeText(utrText).then(() => {
+        const btn = document.getElementById('btn-copy-utr');
+        if (btn) {
+            btn.innerHTML = '<i class="ph ph-check"></i> <span>Copied!</span>';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                if (btn) {
+                    btn.innerHTML = '<i class="ph ph-copy"></i> <span>Copy</span>';
+                    btn.classList.remove('copied');
+                }
+            }, 2000);
+        }
+        showToast('UTR copied to clipboard');
+    }).catch(() => {
+        showToast('UTR: ' + utrText);
+    });
+}
+
+function syncFamilyQuickDateButtons() {
+    const input = document.getElementById('fam-received-date');
+    if (!input) return;
+    const val = input.value;
+    const today = getLocalDateString(new Date());
+
+    const yestDate = new Date();
+    yestDate.setDate(yestDate.getDate() - 1);
+    const yesterday = getLocalDateString(yestDate);
+
+    const btnToday = document.getElementById('btn-fam-received-date-today');
+    const btnYesterday = document.getElementById('btn-fam-received-date-yesterday');
+
+    if (btnToday && btnYesterday) {
+        if (val === today) {
+            btnToday.classList.add('active');
+            btnYesterday.classList.remove('active');
+        } else if (val === yesterday) {
+            btnToday.classList.remove('active');
+            btnYesterday.classList.add('active');
+        } else {
+            btnToday.classList.remove('active');
+            btnYesterday.classList.remove('active');
+        }
+    }
+}
+
+function setupFamilyTransferEventListeners() {
+    // Tab switching inside Family Transfer
+    document.querySelectorAll('.family-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.dataset.tab;
+            currentFamilyTab = targetTab;
+
+            document.querySelectorAll('.family-tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            document.querySelectorAll('.family-tab-content').forEach(content => {
+                if (content.id === targetTab) {
+                    content.classList.remove('hidden');
+                    content.classList.add('active');
+                } else {
+                    content.classList.add('hidden');
+                    content.classList.remove('active');
+                }
+            });
+        });
+    });
+
+    // Month filter
+    const monthFilter = document.getElementById('family-month-filter');
+    if (monthFilter) {
+        monthFilter.addEventListener('change', () => {
+            updateFamilySummaryAndTabs();
+            renderFamilyReceivedList();
+            renderFamilyRentList();
+            renderFamilyBillList();
+        });
+    }
+
+    // Search filters
+    const searchReceived = document.getElementById('search-fam-received');
+    if (searchReceived) searchReceived.addEventListener('input', renderFamilyReceivedList);
+
+    const searchRent = document.getElementById('search-fam-rent');
+    if (searchRent) searchRent.addEventListener('input', renderFamilyRentList);
+
+    const searchBill = document.getElementById('search-fam-bill');
+    if (searchBill) searchBill.addEventListener('input', renderFamilyBillList);
+
+    // Quick Add buttons
+    const btnAddReceived = document.getElementById('btn-add-fam-received');
+    if (btnAddReceived) btnAddReceived.addEventListener('click', () => openFamilyReceivedModal());
+
+    const btnAddRent = document.getElementById('btn-add-fam-rent');
+    if (btnAddRent) btnAddRent.addEventListener('click', () => openFamilyRentModal());
+
+    const btnAddBill = document.getElementById('btn-add-fam-bill');
+    if (btnAddBill) btnAddBill.addEventListener('click', () => openFamilyBillModal());
+
+    // Modal Close buttons
+    const btnCloseReceived = document.getElementById('btn-close-fam-received-modal');
+    if (btnCloseReceived) btnCloseReceived.addEventListener('click', () => closeModal('family-received-modal'));
+
+    const btnCancelReceived = document.getElementById('btn-cancel-fam-received');
+    if (btnCancelReceived) btnCancelReceived.addEventListener('click', () => closeModal('family-received-modal'));
+
+    const btnCloseRent = document.getElementById('btn-close-fam-rent-modal');
+    if (btnCloseRent) btnCloseRent.addEventListener('click', () => closeModal('family-rent-modal'));
+
+    const btnCancelRent = document.getElementById('btn-cancel-fam-rent');
+    if (btnCancelRent) btnCancelRent.addEventListener('click', () => closeModal('family-rent-modal'));
+
+    const btnCloseBill = document.getElementById('btn-close-fam-bill-modal');
+    if (btnCloseBill) btnCloseBill.addEventListener('click', () => closeModal('family-bill-modal'));
+
+    const btnCancelBill = document.getElementById('btn-cancel-fam-bill');
+    if (btnCancelBill) btnCancelBill.addEventListener('click', () => closeModal('family-bill-modal'));
+
+    const btnCloseDetails = document.getElementById('btn-close-fam-details-modal');
+    if (btnCloseDetails) btnCloseDetails.addEventListener('click', () => closeModal('family-details-modal'));
+
+    // Form Submissions
+    const formReceived = document.getElementById('fam-received-form');
+    if (formReceived) formReceived.addEventListener('submit', saveFamilyReceived);
+
+    const formRent = document.getElementById('fam-rent-form');
+    if (formRent) formRent.addEventListener('submit', saveFamilyRent);
+
+    const formBill = document.getElementById('fam-bill-form');
+    if (formBill) formBill.addEventListener('submit', saveFamilyBill);
+
+    // Quick amounts for Received Money modal
+    document.querySelectorAll('.quick-btn-fam-received').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const val = btn.dataset.val;
+            const input = document.getElementById('fam-received-amount');
+            if (input) {
+                input.value = (parseFloat(input.value || 0) + parseFloat(val)).toString();
+            }
+        });
+    });
+
+    // Quick "Now" time buttons
+    ['fam-received', 'fam-rent', 'fam-bill'].forEach(prefix => {
+        const btnNow = document.getElementById(`btn-${prefix}-time-now`);
+        if (btnNow) {
+            btnNow.addEventListener('click', () => {
+                setTimePickerValues(prefix, getLocalTimeString());
+                showToast('Time set to current time', 'info');
+            });
+        }
+
+        // Sync hidden input on dropdown changes
+        ['hour', 'minute', 'ampm'].forEach(field => {
+            const el = document.getElementById(`${prefix}-time-${field}`);
+            if (el) {
+                el.addEventListener('change', () => {
+                    const hiddenInput = document.getElementById(`${prefix}-time`);
+                    if (hiddenInput) {
+                        hiddenInput.value = getTimePickerValue(prefix);
+                    }
+                });
+            }
+        });
+    });
+
+    // Date change listener for quick date syncing
+    const famReceivedDate = document.getElementById('fam-received-date');
+    if (famReceivedDate) {
+        famReceivedDate.addEventListener('change', syncFamilyQuickDateButtons);
     }
 }
 

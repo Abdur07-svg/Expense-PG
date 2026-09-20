@@ -68,6 +68,10 @@
                 <i class="ph ph-money"></i>
                 <span>Income Management</span>
             </li>
+            <li class="drawer-nav-item" data-target="family-transfer">
+                <i class="ph ph-users-three"></i>
+                <span>Family Transfer</span>
+            </li>
             <li class="drawer-nav-item" data-target="settings">
                 <i class="ph ph-gear"></i>
                 <span>Settings</span>
@@ -121,6 +125,10 @@
                 <li class="nav-item desktop-only" data-target="income">
                     <i class="ph ph-money"></i>
                     <span>Income</span>
+                </li>
+                <li class="nav-item desktop-only" data-target="family-transfer">
+                    <i class="ph ph-users-three"></i>
+                    <span>Family Transfer</span>
                 </li>
                 <li class="nav-item desktop-only" data-target="settings">
                     <i class="ph ph-gear"></i>
@@ -553,6 +561,178 @@
                 </div>
             </section>
 
+            <!-- Family Transfer & Mess Payments Section -->
+            <section id="family-transfer" class="page-section hidden">
+                <header class="section-header family-header">
+                    <div>
+                        <h1>Family Transfer & Mess Payments</h1>
+                        <p class="current-date">Separate record for father's support & mess payments</p>
+                    </div>
+                    <div class="header-actions family-header-actions">
+                        <div class="month-select-wrapper">
+                            <i class="ph ph-calendar-blank month-select-icon"></i>
+                            <select id="family-month-filter" class="month-selector" aria-label="Filter by month">
+                                <option value="all">All Time</option>
+                            </select>
+                            <i class="ph ph-caret-down month-select-arrow"></i>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Isolated Money Summary Cards -->
+                <div class="family-summary-grid">
+                    <div class="summary-card highlight-card family-sum-received">
+                        <div class="sum-card-icon-wrap received-icon"><i class="ph ph-hand-coins"></i></div>
+                        <div class="sum-card-body">
+                            <p class="card-title">Total Received from Father</p>
+                            <h2 class="card-value" id="fam-total-received">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="summary-card family-sum-rent">
+                        <div class="sum-card-icon-wrap rent-icon"><i class="ph ph-house"></i></div>
+                        <div class="sum-card-body">
+                            <p class="card-title">Total Room Rent Paid</p>
+                            <h2 class="card-value" id="fam-total-rent">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="summary-card family-sum-bill">
+                        <div class="sum-card-icon-wrap bill-icon"><i class="ph ph-lightning"></i></div>
+                        <div class="sum-card-body">
+                            <p class="card-title">Total Current Bill Paid</p>
+                            <h2 class="card-value" id="fam-total-bill">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="summary-card family-sum-mess">
+                        <div class="sum-card-icon-wrap mess-icon"><i class="ph ph-receipt"></i></div>
+                        <div class="sum-card-body">
+                            <p class="card-title">Total Mess Payments</p>
+                            <h2 class="card-value" id="fam-total-mess">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="summary-card family-sum-remaining" id="fam-remaining-card">
+                        <div class="sum-card-icon-wrap remaining-icon"><i class="ph ph-wallet"></i></div>
+                        <div class="sum-card-body">
+                            <p class="card-title">Remaining Amount</p>
+                            <h2 class="card-value" id="fam-remaining">₹0</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs inside Family Transfer -->
+                <div class="family-nav-tabs-wrapper">
+                    <div class="family-tabs" role="tablist">
+                        <button class="family-tab-btn active" data-tab="fam-tab-received" role="tab">
+                            <i class="ph-bold ph-hand-coins"></i>
+                            <span class="tab-label">
+                                <span class="tab-label-full">1. Money Received</span>
+                                <span class="tab-label-short">Received</span>
+                            </span>
+                            <span class="tab-badge" id="fam-badge-received">0</span>
+                        </button>
+                        <button class="family-tab-btn" data-tab="fam-tab-rent" role="tab">
+                            <i class="ph-bold ph-house"></i>
+                            <span class="tab-label">
+                                <span class="tab-label-full">2. Room Rent</span>
+                                <span class="tab-label-short">Rent</span>
+                            </span>
+                            <span class="tab-badge" id="fam-badge-rent">0</span>
+                        </button>
+                        <button class="family-tab-btn" data-tab="fam-tab-bill" role="tab">
+                            <i class="ph-bold ph-lightning"></i>
+                            <span class="tab-label">
+                                <span class="tab-label-full">3. Electricity Bill</span>
+                                <span class="tab-label-short">Current Bill</span>
+                            </span>
+                            <span class="tab-badge" id="fam-badge-bill">0</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tab 1: Money Received -->
+                <div class="family-tab-content active" id="fam-tab-received">
+                    <div class="card family-panel-card">
+                        <div class="panel-card-header">
+                            <div>
+                                <h3>Family Money Received</h3>
+                                <p class="panel-sub">Money sent by father specifically for mess & PG expenses</p>
+                            </div>
+                            <button class="primary-btn btn-sm" id="btn-add-fam-received">
+                                <i class="ph-bold ph-plus-circle"></i>
+                                <span>Add Received Money</span>
+                            </button>
+                        </div>
+                        
+                        <div class="family-search-filter-row">
+                            <div class="search-box">
+                                <i class="ph ph-magnifying-glass"></i>
+                                <input type="text" id="search-fam-received" placeholder="Search by UTR, note, payment method...">
+                            </div>
+                        </div>
+
+                        <div class="family-records-list" id="fam-received-list">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Room Rent Payments -->
+                <div class="family-tab-content hidden" id="fam-tab-rent">
+                    <div class="card family-panel-card">
+                        <div class="panel-card-header">
+                            <div>
+                                <h3>Room Rent Payments</h3>
+                                <p class="panel-sub">Monthly rent paid to mess/PG owner</p>
+                            </div>
+                            <button class="primary-btn btn-sm" id="btn-add-fam-rent">
+                                <i class="ph-bold ph-plus-circle"></i>
+                                <span>Add Room Rent</span>
+                            </button>
+                        </div>
+
+                        <div class="family-search-filter-row">
+                            <div class="search-box">
+                                <i class="ph ph-magnifying-glass"></i>
+                                <input type="text" id="search-fam-rent" placeholder="Search by month, UTR, recipient, note...">
+                            </div>
+                        </div>
+
+                        <div class="family-records-list" id="fam-rent-list">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Electricity / Current Bill Payments -->
+                <div class="family-tab-content hidden" id="fam-tab-bill">
+                    <div class="card family-panel-card">
+                        <div class="panel-card-header">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+                                    <h3>Electricity / Current Bill</h3>
+                                    <span class="badge-tag-limit"><i class="ph ph-info"></i> Max 3 bills / month</span>
+                                </div>
+                                <p class="panel-sub">Current bill payments with UTR proof reference</p>
+                            </div>
+                            <button class="primary-btn btn-sm" id="btn-add-fam-bill">
+                                <i class="ph-bold ph-plus-circle"></i>
+                                <span>Add Current Bill</span>
+                            </button>
+                        </div>
+
+                        <div class="family-search-filter-row">
+                            <div class="search-box">
+                                <i class="ph ph-magnifying-glass"></i>
+                                <input type="text" id="search-fam-bill" placeholder="Search by month, UTR, recipient, note...">
+                            </div>
+                        </div>
+
+                        <div class="family-records-list" id="fam-bill-list">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
         </main>
 
         <!-- Floating Action Button -->
@@ -788,6 +968,516 @@
 
                         <button type="submit" class="primary-btn w-100 mt-4">Save Income</button>
                     </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Family Money Received Modal -->
+        <div class="modal-overlay" id="family-received-modal">
+            <div class="modal-content card" style="max-width: 480px;">
+                <div class="modal-header">
+                    <div>
+                        <h2 id="modal-fam-received-title">Record Money Received</h2>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">Money sent by father for mess payments</p>
+                    </div>
+                    <button class="icon-btn close-modal" id="btn-close-fam-received-modal"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="fam-received-form">
+                        <input type="hidden" id="fam-received-id">
+                        
+                        <div class="amount-input-wrapper">
+                            <span class="currency-symbol" id="fam-received-currency">₹</span>
+                            <input type="number" id="fam-received-amount" placeholder="0" required min="1" step="any">
+                        </div>
+
+                        <div class="quick-amounts">
+                            <button type="button" class="quick-btn-fam-received" data-val="1000">+1k</button>
+                            <button type="button" class="quick-btn-fam-received" data-val="2000">+2k</button>
+                            <button type="button" class="quick-btn-fam-received" data-val="5000">+5k</button>
+                            <button type="button" class="quick-btn-fam-received" data-val="8000">+8k</button>
+                            <button type="button" class="quick-btn-fam-received" data-val="10000">+10k</button>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <div class="date-label-row">
+                                    <label for="fam-received-date">Date Received</label>
+                                    <div class="quick-dates">
+                                        <button type="button" class="quick-date-btn active" id="btn-fam-received-date-today" data-target="fam-received-date" data-offset="0">Today</button>
+                                        <button type="button" class="quick-date-btn" id="btn-fam-received-date-yesterday" data-target="fam-received-date" data-offset="-1">Yesterday</button>
+                                    </div>
+                                </div>
+                                <div class="date-input-wrapper">
+                                    <i class="ph ph-calendar-blank date-icon"></i>
+                                    <input type="date" id="fam-received-date" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="date-label-row">
+                                    <label for="fam-received-time-hour">Time</label>
+                                    <div class="quick-dates">
+                                        <button type="button" class="quick-date-btn" id="btn-fam-received-time-now" title="Set to current device time">Now</button>
+                                    </div>
+                                </div>
+                                <div class="time-picker-wrapper">
+                                    <select id="fam-received-time-hour" class="time-select hour-select" aria-label="Hour">
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                    </select>
+                                    <span class="time-separator">:</span>
+                                    <select id="fam-received-time-minute" class="time-select minute-select" aria-label="Minute">
+                                        <option value="00">00</option>
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                        <option value="13">13</option>
+                                        <option value="14">14</option>
+                                        <option value="15">15</option>
+                                        <option value="16">16</option>
+                                        <option value="17">17</option>
+                                        <option value="18">18</option>
+                                        <option value="19">19</option>
+                                        <option value="20">20</option>
+                                        <option value="21">21</option>
+                                        <option value="22">22</option>
+                                        <option value="23">23</option>
+                                        <option value="24">24</option>
+                                        <option value="25">25</option>
+                                        <option value="26">26</option>
+                                        <option value="27">27</option>
+                                        <option value="28">28</option>
+                                        <option value="29">29</option>
+                                        <option value="30">30</option>
+                                        <option value="31">31</option>
+                                        <option value="32">32</option>
+                                        <option value="33">33</option>
+                                        <option value="34">34</option>
+                                        <option value="35">35</option>
+                                        <option value="36">36</option>
+                                        <option value="37">37</option>
+                                        <option value="38">38</option>
+                                        <option value="39">39</option>
+                                        <option value="40">40</option>
+                                        <option value="41">41</option>
+                                        <option value="42">42</option>
+                                        <option value="43">43</option>
+                                        <option value="44">44</option>
+                                        <option value="45">45</option>
+                                        <option value="46">46</option>
+                                        <option value="47">47</option>
+                                        <option value="48">48</option>
+                                        <option value="49">49</option>
+                                        <option value="50">50</option>
+                                        <option value="51">51</option>
+                                        <option value="52">52</option>
+                                        <option value="53">53</option>
+                                        <option value="54">54</option>
+                                        <option value="55">55</option>
+                                        <option value="56">56</option>
+                                        <option value="57">57</option>
+                                        <option value="58">58</option>
+                                        <option value="59">59</option>
+                                    </select>
+                                    <select id="fam-received-time-ampm" class="time-select ampm-select" aria-label="AM or PM">
+                                        <option value="AM">AM</option>
+                                        <option value="PM">PM</option>
+                                    </select>
+                                    <input type="hidden" id="fam-received-time" value="">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-received-payment">Payment Method</label>
+                            <select id="fam-received-payment" required>
+                                <option value="UPI" selected>UPI</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-received-utr">UTR / Transaction ID <span style="font-size: 0.8rem; color: var(--primary); font-weight: 500;">(Payment Proof Reference)</span></label>
+                            <div class="utr-input-wrapper">
+                                <i class="ph ph-receipt utr-icon"></i>
+                                <input type="text" id="fam-received-utr" placeholder="e.g. 425612893012 or UPI Ref No" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-received-note">Optional Note</label>
+                            <input type="text" id="fam-received-note" placeholder="e.g. Sent for September mess & room rent">
+                        </div>
+
+                        <div class="modal-form-actions mt-4">
+                            <button type="button" class="secondary-btn" id="btn-cancel-fam-received">Cancel</button>
+                            <button type="submit" class="primary-btn" id="btn-save-fam-received">Save Record</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Room Rent Modal -->
+        <div class="modal-overlay" id="family-rent-modal">
+            <div class="modal-content card" style="max-width: 480px;">
+                <div class="modal-header">
+                    <div>
+                        <h2 id="modal-fam-rent-title">Record Room Rent Payment</h2>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">Payment made to mess/PG owner</p>
+                    </div>
+                    <button class="icon-btn close-modal" id="btn-close-fam-rent-modal"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="fam-rent-form">
+                        <input type="hidden" id="fam-rent-id">
+
+                        <div class="amount-input-wrapper">
+                            <span class="currency-symbol" id="fam-rent-currency">₹</span>
+                            <input type="number" id="fam-rent-amount" placeholder="0" required min="1" step="any">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-rent-month">Rent Month</label>
+                            <input type="month" id="fam-rent-month" required>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="fam-rent-date">Payment Date</label>
+                                <div class="date-input-wrapper">
+                                    <i class="ph ph-calendar-blank date-icon"></i>
+                                    <input type="date" id="fam-rent-date" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="date-label-row">
+                                    <label for="fam-rent-time-hour">Payment Time</label>
+                                    <div class="quick-dates">
+                                        <button type="button" class="quick-date-btn" id="btn-fam-rent-time-now" title="Set to current device time">Now</button>
+                                    </div>
+                                </div>
+                                <div class="time-picker-wrapper">
+                                    <select id="fam-rent-time-hour" class="time-select hour-select" aria-label="Hour">
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                    </select>
+                                    <span class="time-separator">:</span>
+                                    <select id="fam-rent-time-minute" class="time-select minute-select" aria-label="Minute">
+                                        <option value="00">00</option>
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                        <option value="13">13</option>
+                                        <option value="14">14</option>
+                                        <option value="15">15</option>
+                                        <option value="16">16</option>
+                                        <option value="17">17</option>
+                                        <option value="18">18</option>
+                                        <option value="19">19</option>
+                                        <option value="20">20</option>
+                                        <option value="21">21</option>
+                                        <option value="22">22</option>
+                                        <option value="23">23</option>
+                                        <option value="24">24</option>
+                                        <option value="25">25</option>
+                                        <option value="26">26</option>
+                                        <option value="27">27</option>
+                                        <option value="28">28</option>
+                                        <option value="29">29</option>
+                                        <option value="30">30</option>
+                                        <option value="31">31</option>
+                                        <option value="32">32</option>
+                                        <option value="33">33</option>
+                                        <option value="34">34</option>
+                                        <option value="35">35</option>
+                                        <option value="36">36</option>
+                                        <option value="37">37</option>
+                                        <option value="38">38</option>
+                                        <option value="39">39</option>
+                                        <option value="40">40</option>
+                                        <option value="41">41</option>
+                                        <option value="42">42</option>
+                                        <option value="43">43</option>
+                                        <option value="44">44</option>
+                                        <option value="45">45</option>
+                                        <option value="46">46</option>
+                                        <option value="47">47</option>
+                                        <option value="48">48</option>
+                                        <option value="49">49</option>
+                                        <option value="50">50</option>
+                                        <option value="51">51</option>
+                                        <option value="52">52</option>
+                                        <option value="53">53</option>
+                                        <option value="54">54</option>
+                                        <option value="55">55</option>
+                                        <option value="56">56</option>
+                                        <option value="57">57</option>
+                                        <option value="58">58</option>
+                                        <option value="59">59</option>
+                                    </select>
+                                    <select id="fam-rent-time-ampm" class="time-select ampm-select" aria-label="AM or PM">
+                                        <option value="AM">AM</option>
+                                        <option value="PM">PM</option>
+                                    </select>
+                                    <input type="hidden" id="fam-rent-time" value="">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="fam-rent-payment">Payment Method</label>
+                                <select id="fam-rent-payment" required>
+                                    <option value="UPI" selected>UPI</option>
+                                    <option value="Bank Transfer">Bank Transfer</option>
+                                    <option value="Cash">Cash</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="fam-rent-paid-to">Paid To (Owner/Landlord)</label>
+                                <input type="text" id="fam-rent-paid-to" placeholder="e.g. PG Owner Name" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-rent-utr">UTR / Transaction ID <span style="font-size: 0.8rem; color: var(--primary); font-weight: 500;">(Payment Proof Reference)</span></label>
+                            <div class="utr-input-wrapper">
+                                <i class="ph ph-receipt utr-icon"></i>
+                                <input type="text" id="fam-rent-utr" placeholder="e.g. 425612893012 or UPI Ref No" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-rent-note">Optional Note</label>
+                            <input type="text" id="fam-rent-note" placeholder="e.g. Room 204 rent with maintenance">
+                        </div>
+
+                        <div class="modal-form-actions mt-4">
+                            <button type="button" class="secondary-btn" id="btn-cancel-fam-rent">Cancel</button>
+                            <button type="submit" class="primary-btn" id="btn-save-fam-rent">Save Rent Payment</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Electricity / Current Bill Modal -->
+        <div class="modal-overlay" id="family-bill-modal">
+            <div class="modal-content card" style="max-width: 480px;">
+                <div class="modal-header">
+                    <div>
+                        <h2 id="modal-fam-bill-title">Record Current Bill Payment</h2>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">Electricity bill payment (Max 3 records per month)</p>
+                    </div>
+                    <button class="icon-btn close-modal" id="btn-close-fam-bill-modal"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="fam-bill-form">
+                        <input type="hidden" id="fam-bill-id">
+
+                        <div class="amount-input-wrapper">
+                            <span class="currency-symbol" id="fam-bill-currency">₹</span>
+                            <input type="number" id="fam-bill-amount" placeholder="0" required min="1" step="any">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-bill-month">Bill Month</label>
+                            <input type="month" id="fam-bill-month" required>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="fam-bill-date">Payment Date</label>
+                                <div class="date-input-wrapper">
+                                    <i class="ph ph-calendar-blank date-icon"></i>
+                                    <input type="date" id="fam-bill-date" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="date-label-row">
+                                    <label for="fam-bill-time-hour">Payment Time</label>
+                                    <div class="quick-dates">
+                                        <button type="button" class="quick-date-btn" id="btn-fam-bill-time-now" title="Set to current device time">Now</button>
+                                    </div>
+                                </div>
+                                <div class="time-picker-wrapper">
+                                    <select id="fam-bill-time-hour" class="time-select hour-select" aria-label="Hour">
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                    </select>
+                                    <span class="time-separator">:</span>
+                                    <select id="fam-bill-time-minute" class="time-select minute-select" aria-label="Minute">
+                                        <option value="00">00</option>
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                        <option value="13">13</option>
+                                        <option value="14">14</option>
+                                        <option value="15">15</option>
+                                        <option value="16">16</option>
+                                        <option value="17">17</option>
+                                        <option value="18">18</option>
+                                        <option value="19">19</option>
+                                        <option value="20">20</option>
+                                        <option value="21">21</option>
+                                        <option value="22">22</option>
+                                        <option value="23">23</option>
+                                        <option value="24">24</option>
+                                        <option value="25">25</option>
+                                        <option value="26">26</option>
+                                        <option value="27">27</option>
+                                        <option value="28">28</option>
+                                        <option value="29">29</option>
+                                        <option value="30">30</option>
+                                        <option value="31">31</option>
+                                        <option value="32">32</option>
+                                        <option value="33">33</option>
+                                        <option value="34">34</option>
+                                        <option value="35">35</option>
+                                        <option value="36">36</option>
+                                        <option value="37">37</option>
+                                        <option value="38">38</option>
+                                        <option value="39">39</option>
+                                        <option value="40">40</option>
+                                        <option value="41">41</option>
+                                        <option value="42">42</option>
+                                        <option value="43">43</option>
+                                        <option value="44">44</option>
+                                        <option value="45">45</option>
+                                        <option value="46">46</option>
+                                        <option value="47">47</option>
+                                        <option value="48">48</option>
+                                        <option value="49">49</option>
+                                        <option value="50">50</option>
+                                        <option value="51">51</option>
+                                        <option value="52">52</option>
+                                        <option value="53">53</option>
+                                        <option value="54">54</option>
+                                        <option value="55">55</option>
+                                        <option value="56">56</option>
+                                        <option value="57">57</option>
+                                        <option value="58">58</option>
+                                        <option value="59">59</option>
+                                    </select>
+                                    <select id="fam-bill-time-ampm" class="time-select ampm-select" aria-label="AM or PM">
+                                        <option value="AM">AM</option>
+                                        <option value="PM">PM</option>
+                                    </select>
+                                    <input type="hidden" id="fam-bill-time" value="">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="fam-bill-payment">Payment Method</label>
+                                <select id="fam-bill-payment" required>
+                                    <option value="UPI" selected>UPI</option>
+                                    <option value="Bank Transfer">Bank Transfer</option>
+                                    <option value="Cash">Cash</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="fam-bill-paid-to">Paid To (Owner/Landlord)</label>
+                                <input type="text" id="fam-bill-paid-to" placeholder="e.g. Mess Owner Name" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-bill-utr">UTR / Transaction ID <span style="font-size: 0.8rem; color: var(--primary); font-weight: 500;">(Payment Proof Reference)</span></label>
+                            <div class="utr-input-wrapper">
+                                <i class="ph ph-receipt utr-icon"></i>
+                                <input type="text" id="fam-bill-utr" placeholder="e.g. 425612893012 or UPI Ref No" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fam-bill-note">Optional Note</label>
+                            <input type="text" id="fam-bill-note" placeholder="e.g. Meter reading 45 units">
+                        </div>
+
+                        <div class="modal-form-actions mt-4">
+                            <button type="button" class="secondary-btn" id="btn-cancel-fam-bill">Cancel</button>
+                            <button type="submit" class="primary-btn" id="btn-save-fam-bill">Save Bill Payment</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- View Details / Payment Proof Modal -->
+        <div class="modal-overlay" id="family-details-modal">
+            <div class="modal-content card" style="max-width: 500px;">
+                <div class="modal-header">
+                    <div>
+                        <h2>Payment Details & Proof</h2>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">Official digital transaction reference</p>
+                    </div>
+                    <button class="icon-btn close-modal" id="btn-close-fam-details-modal"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body" id="fam-details-body">
+                    <!-- Populated dynamically -->
                 </div>
             </div>
         </div>
