@@ -1866,8 +1866,257 @@ function renderIncome() {
 }
 
 /* ==========================================================================
-   UI Rendering - Settings
+   UI Rendering - Settings & Annual Expense Summary
    ========================================================================== */
+function getAllRecordedYears() {
+    const yearsSet = new Set();
+    const currentYear = new Date().getFullYear();
+    yearsSet.add(String(currentYear));
+
+    // 1. From expenses
+    if (state.expenses && Array.isArray(state.expenses)) {
+        state.expenses.forEach(e => {
+            if (e.date) {
+                const y = e.date.substring(0, 4);
+                if (y && y.length === 4) yearsSet.add(y);
+            }
+        });
+    }
+
+    // 2. From mealEntries
+    if (state.mealEntries) {
+        Object.keys(state.mealEntries).forEach(d => {
+            const y = d.substring(0, 4);
+            if (y && y.length === 4) yearsSet.add(y);
+        });
+    }
+
+    // 3. From familyData
+    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
+        familyData.roomRent.forEach(r => {
+            const y = (r.date || r.month || '').substring(0, 4);
+            if (y && y.length === 4) yearsSet.add(y);
+        });
+    }
+    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
+        familyData.currentBill.forEach(b => {
+            const y = (b.date || b.month || '').substring(0, 4);
+            if (y && y.length === 4) yearsSet.add(y);
+        });
+    }
+    if (familyData.received && Array.isArray(familyData.received)) {
+        familyData.received.forEach(rec => {
+            const y = (rec.date || '').substring(0, 4);
+            if (y && y.length === 4) yearsSet.add(y);
+        });
+    }
+
+    return Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
+}
+
+function getAnnualExpenseCalculations(selectedYear = 'all') {
+    // 1. Daily Meals: sum cost from state.mealEntries
+    let totalMealCost = 0;
+    let totalMealsCount = 0;
+    const defaultB = Number(state.mealSettings?.breakfastRate) || 30;
+    const defaultL = Number(state.mealSettings?.lunchRate) || 50;
+    const defaultD = Number(state.mealSettings?.dinnerRate) || 50;
+
+    if (state.mealEntries) {
+        Object.entries(state.mealEntries).forEach(([dateStr, entry]) => {
+            if (!entry) return;
+            const entryYear = dateStr.substring(0, 4);
+            if (selectedYear === 'all' || entryYear === selectedYear) {
+                const bRate = entry.breakfastRate !== undefined ? Number(entry.breakfastRate) : defaultB;
+                const lRate = entry.lunchRate !== undefined ? Number(entry.lunchRate) : defaultL;
+                const dRate = entry.dinnerRate !== undefined ? Number(entry.dinnerRate) : defaultD;
+
+                let dayMealsCount = 0;
+                let dayCost = 0;
+                if (entry.breakfast) { dayMealsCount++; dayCost += bRate; }
+                if (entry.lunch) { dayMealsCount++; dayCost += lRate; }
+                if (entry.dinner) { dayMealsCount++; dayCost += dRate; }
+
+                totalMealsCount += dayMealsCount;
+                totalMealCost += (entry.cost !== undefined ? Number(entry.cost) : dayCost);
+            }
+        });
+    }
+
+    // 2. Room Rent: sum from familyData.roomRent
+    let totalRoomRent = 0;
+    let roomRentCount = 0;
+    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
+        familyData.roomRent.forEach(item => {
+            const itemYear = (item.date || item.month || '').substring(0, 4);
+            if (selectedYear === 'all' || itemYear === selectedYear) {
+                totalRoomRent += Number(item.amount || 0);
+                roomRentCount++;
+            }
+        });
+    }
+
+    // 3. Current / Electric Bill: sum from familyData.currentBill
+    let totalCurrentBill = 0;
+    let currentBillCount = 0;
+    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
+        familyData.currentBill.forEach(item => {
+            const itemYear = (item.date || item.month || '').substring(0, 4);
+            if (selectedYear === 'all' || itemYear === selectedYear) {
+                totalCurrentBill += Number(item.amount || 0);
+                currentBillCount++;
+            }
+        });
+    }
+
+    // 4. Daily Regular Expenses: sum from state.expenses
+    let totalDailyExpense = 0;
+    let dailyExpenseCount = 0;
+    if (state.expenses && Array.isArray(state.expenses)) {
+        state.expenses.forEach(e => {
+            const itemYear = (e.date || '').substring(0, 4);
+            if (selectedYear === 'all' || itemYear === selectedYear) {
+                totalDailyExpense += Number(e.amount || 0);
+                dailyExpenseCount++;
+            }
+        });
+    }
+
+    // 5. Money received from father: sum from familyData.received
+    let totalReceived = 0;
+    let receivedCount = 0;
+    if (familyData.received && Array.isArray(familyData.received)) {
+        familyData.received.forEach(item => {
+            const itemYear = (item.date || '').substring(0, 4);
+            if (selectedYear === 'all' || itemYear === selectedYear) {
+                totalReceived += Number(item.amount || 0);
+                receivedCount++;
+            }
+        });
+    }
+
+    // Grand Total
+    const grandTotal = totalMealCost + totalRoomRent + totalCurrentBill + totalDailyExpense;
+
+    // Percentages
+    const mealsPct = grandTotal > 0 ? Math.round((totalMealCost / grandTotal) * 100) : 0;
+    const rentPct = grandTotal > 0 ? Math.round((totalRoomRent / grandTotal) * 100) : 0;
+    const billPct = grandTotal > 0 ? Math.round((totalCurrentBill / grandTotal) * 100) : 0;
+    const dailyPct = grandTotal > 0 ? Math.max(0, 100 - mealsPct - rentPct - billPct) : 0;
+
+    // Monthly average calculation
+    const currentYearStr = String(new Date().getFullYear());
+    let monthsDivisor = 12;
+    if (selectedYear === currentYearStr) {
+        monthsDivisor = Math.max(1, new Date().getMonth() + 1);
+    } else if (selectedYear === 'all') {
+        const yearsCount = Math.max(1, getAllRecordedYears().length);
+        monthsDivisor = yearsCount * 12;
+    }
+    const monthlyAvg = Math.round(grandTotal / (monthsDivisor || 1));
+
+    return {
+        selectedYear,
+        totalMealCost,
+        totalMealsCount,
+        totalRoomRent,
+        roomRentCount,
+        totalCurrentBill,
+        currentBillCount,
+        totalDailyExpense,
+        dailyExpenseCount,
+        totalReceived,
+        receivedCount,
+        grandTotal,
+        mealsPct,
+        rentPct,
+        billPct,
+        dailyPct,
+        monthlyAvg
+    };
+}
+
+function renderAnnualExpenseSummary(selectedYear = null) {
+    const yearSelect = document.getElementById('annual-year-select');
+    const recordedYears = getAllRecordedYears();
+
+    if (yearSelect) {
+        const currentSelected = selectedYear || yearSelect.value || 'all';
+        
+        let opts = `<option value="all" ${currentSelected === 'all' ? 'selected' : ''}>All Time (Total)</option>`;
+        recordedYears.forEach(y => {
+            opts += `<option value="${y}" ${currentSelected === y ? 'selected' : ''}>Year ${y}</option>`;
+        });
+        yearSelect.innerHTML = opts;
+        yearSelect.value = currentSelected;
+    }
+
+    const currentYearValue = yearSelect ? yearSelect.value : (selectedYear || 'all');
+    const calc = getAnnualExpenseCalculations(currentYearValue);
+
+    // Update Banner
+    const periodTitle = document.getElementById('annual-banner-period-title');
+    if (periodTitle) {
+        periodTitle.textContent = currentYearValue === 'all' ? 'Total Spending (All Time)' : `Total Spending in ${currentYearValue}`;
+    }
+
+    const grandTotalEl = document.getElementById('annual-grand-total');
+    if (grandTotalEl) grandTotalEl.textContent = formatCurrency(calc.grandTotal);
+
+    const monthlyAvgEl = document.getElementById('annual-monthly-avg');
+    if (monthlyAvgEl) monthlyAvgEl.textContent = `${formatCurrency(calc.monthlyAvg)}/mo`;
+
+    const receivedTotalEl = document.getElementById('annual-received-total');
+    if (receivedTotalEl) receivedTotalEl.textContent = formatCurrency(calc.totalReceived);
+
+    // Update 4 Pillars
+    const pMeals = document.getElementById('annual-pillar-meals');
+    const pMealsCount = document.getElementById('annual-pillar-meals-count');
+    const pMealsPct = document.getElementById('annual-pillar-meals-pct');
+    if (pMeals) pMeals.textContent = formatCurrency(calc.totalMealCost);
+    if (pMealsCount) pMealsCount.textContent = `${calc.totalMealsCount} ${calc.totalMealsCount === 1 ? 'meal taken' : 'meals taken'}`;
+    if (pMealsPct) pMealsPct.textContent = `${calc.mealsPct}%`;
+
+    const pRent = document.getElementById('annual-pillar-rent');
+    const pRentCount = document.getElementById('annual-pillar-rent-count');
+    const pRentPct = document.getElementById('annual-pillar-rent-pct');
+    if (pRent) pRent.textContent = formatCurrency(calc.totalRoomRent);
+    if (pRentCount) pRentCount.textContent = `${calc.roomRentCount} ${calc.roomRentCount === 1 ? 'payment recorded' : 'payments recorded'}`;
+    if (pRentPct) pRentPct.textContent = `${calc.rentPct}%`;
+
+    const pBill = document.getElementById('annual-pillar-bill');
+    const pBillCount = document.getElementById('annual-pillar-bill-count');
+    const pBillPct = document.getElementById('annual-pillar-bill-pct');
+    if (pBill) pBill.textContent = formatCurrency(calc.totalCurrentBill);
+    if (pBillCount) pBillCount.textContent = `${calc.currentBillCount} ${calc.currentBillCount === 1 ? 'bill paid' : 'bills paid'}`;
+    if (pBillPct) pBillPct.textContent = `${calc.billPct}%`;
+
+    const pDaily = document.getElementById('annual-pillar-daily');
+    const pDailyCount = document.getElementById('annual-pillar-daily-count');
+    const pDailyPct = document.getElementById('annual-pillar-daily-pct');
+    if (pDaily) pDaily.textContent = formatCurrency(calc.totalDailyExpense);
+    if (pDailyCount) pDailyCount.textContent = `${calc.dailyExpenseCount} ${calc.dailyExpenseCount === 1 ? 'transaction' : 'transactions'}`;
+    if (pDailyPct) pDailyPct.textContent = `${calc.dailyPct}%`;
+
+    // Update Proportion Progress Bars
+    const barMeals = document.getElementById('prop-bar-meals');
+    const barRent = document.getElementById('prop-bar-rent');
+    const barBill = document.getElementById('prop-bar-bill');
+    const barDaily = document.getElementById('prop-bar-daily');
+
+    if (calc.grandTotal > 0) {
+        if (barMeals) barMeals.style.width = `${calc.mealsPct}%`;
+        if (barRent) barRent.style.width = `${calc.rentPct}%`;
+        if (barBill) barBill.style.width = `${calc.billPct}%`;
+        if (barDaily) barDaily.style.width = `${calc.dailyPct}%`;
+    } else {
+        if (barMeals) barMeals.style.width = '25%';
+        if (barRent) barRent.style.width = '25%';
+        if (barBill) barBill.style.width = '25%';
+        if (barDaily) barDaily.style.width = '25%';
+    }
+}
+
 function renderSettings() {
     document.getElementById('setting-name').value = state.settings.userName || '';
     document.getElementById('setting-budget').value = state.settings.budget;
@@ -1875,6 +2124,7 @@ function renderSettings() {
     document.getElementById('setting-currency').value = state.settings.currency;
     
     renderCategorySettings();
+    renderAnnualExpenseSummary();
 }
 
 function renderCategorySettings() {
@@ -2439,6 +2689,13 @@ function setupEventListeners() {
         showToast('Settings saved');
         renderView('settings'); // re-render to update
     });
+
+    const annualYearSelect = document.getElementById('annual-year-select');
+    if (annualYearSelect) {
+        annualYearSelect.addEventListener('change', (e) => {
+            renderAnnualExpenseSummary(e.target.value);
+        });
+    }
 
     document.getElementById('btn-add-category').addEventListener('click', () => {
         const input = document.getElementById('new-category-name');

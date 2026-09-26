@@ -532,6 +532,113 @@
                 </header>
 
                 <div class="settings-grid">
+                    <!-- Annual & Overall Expense Overview Card (Multi-Year & All-Time Total) -->
+                    <div class="card settings-annual-card" style="grid-column: 1 / -1;">
+                        <div class="annual-card-header">
+                            <div class="annual-header-left">
+                                <div class="annual-header-icon"><i class="ph ph-chart-line-up"></i></div>
+                                <div>
+                                    <h3>Annual & Overall Expense Calculation</h3>
+                                    <p class="annual-sub">Total of Daily Meals, Room Rent, Electric Bills & Daily Expenses</p>
+                                </div>
+                            </div>
+                            <div class="annual-year-filter">
+                                <i class="ph ph-calendar-blank"></i>
+                                <select id="annual-year-select" aria-label="Select Year for total calculation">
+                                    <option value="all">All Time (Total)</option>
+                                    <!-- Populated dynamically by JS -->
+                                </select>
+                                <i class="ph ph-caret-down"></i>
+                            </div>
+                        </div>
+
+                        <!-- Grand Total Highlight Banner -->
+                        <div class="annual-grand-banner">
+                            <div class="grand-banner-content">
+                                <span class="grand-title" id="annual-banner-period-title">Total Spending (All Time)</span>
+                                <h1 class="grand-amount" id="annual-grand-total">₹0</h1>
+                                <p class="grand-sub" id="annual-grand-sub">Calculated from all 4 expense pillars</p>
+                            </div>
+                            <div class="grand-banner-stats">
+                                <div class="grand-stat-box">
+                                    <span>Avg. per Month</span>
+                                    <strong id="annual-monthly-avg">₹0/mo</strong>
+                                </div>
+                                <div class="grand-stat-box">
+                                    <span>Total Father Support</span>
+                                    <strong id="annual-received-total" style="color: var(--success);">₹0</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4 Main Pillars Grid -->
+                        <div class="annual-pillars-grid">
+                            <!-- 1. Daily Meals -->
+                            <div class="annual-pillar-card pillar-meals">
+                                <div class="pillar-icon-wrap"><i class="ph ph-cooking-pot"></i></div>
+                                <div class="pillar-content">
+                                    <span class="pillar-title">1. Daily Meals Cost</span>
+                                    <h3 class="pillar-amount" id="annual-pillar-meals">₹0</h3>
+                                    <span class="pillar-meta" id="annual-pillar-meals-count">0 meals recorded</span>
+                                </div>
+                                <span class="pillar-pct" id="annual-pillar-meals-pct">0%</span>
+                            </div>
+
+                            <!-- 2. Room Rent -->
+                            <div class="annual-pillar-card pillar-rent">
+                                <div class="pillar-icon-wrap"><i class="ph ph-house"></i></div>
+                                <div class="pillar-content">
+                                    <span class="pillar-title">2. Room Rent Paid</span>
+                                    <h3 class="pillar-amount" id="annual-pillar-rent">₹0</h3>
+                                    <span class="pillar-meta" id="annual-pillar-rent-count">0 months paid</span>
+                                </div>
+                                <span class="pillar-pct" id="annual-pillar-rent-pct">0%</span>
+                            </div>
+
+                            <!-- 3. Electric Bill -->
+                            <div class="annual-pillar-card pillar-bill">
+                                <div class="pillar-icon-wrap"><i class="ph ph-lightning"></i></div>
+                                <div class="pillar-content">
+                                    <span class="pillar-title">3. Current / Electric Bill</span>
+                                    <h3 class="pillar-amount" id="annual-pillar-bill">₹0</h3>
+                                    <span class="pillar-meta" id="annual-pillar-bill-count">0 bills paid</span>
+                                </div>
+                                <span class="pillar-pct" id="annual-pillar-bill-pct">0%</span>
+                            </div>
+
+                            <!-- 4. Daily Expenses -->
+                            <div class="annual-pillar-card pillar-daily">
+                                <div class="pillar-icon-wrap"><i class="ph ph-receipt"></i></div>
+                                <div class="pillar-content">
+                                    <span class="pillar-title">4. Daily Regular Expense</span>
+                                    <h3 class="pillar-amount" id="annual-pillar-daily">₹0</h3>
+                                    <span class="pillar-meta" id="annual-pillar-daily-count">0 transactions</span>
+                                </div>
+                                <span class="pillar-pct" id="annual-pillar-daily-pct">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- Proportion Visual Bar -->
+                        <div class="annual-proportion-wrapper">
+                            <div class="proportion-header">
+                                <span>Expense Distribution</span>
+                                <span id="annual-distribution-summary">Meals • Rent • Current Bill • Daily</span>
+                            </div>
+                            <div class="proportion-bar">
+                                <div class="prop-segment prop-meals" id="prop-bar-meals" style="width: 25%;" title="Daily Meals"></div>
+                                <div class="prop-segment prop-rent" id="prop-bar-rent" style="width: 25%;" title="Room Rent"></div>
+                                <div class="prop-segment prop-bill" id="prop-bar-bill" style="width: 25%;" title="Current Bill"></div>
+                                <div class="prop-segment prop-daily" id="prop-bar-daily" style="width: 25%;" title="Daily Expenses"></div>
+                            </div>
+                            <div class="proportion-legend">
+                                <div class="prop-legend-item"><span class="legend-indicator dot-meals"></span> Daily Meals</div>
+                                <div class="prop-legend-item"><span class="legend-indicator dot-rent"></span> Room Rent</div>
+                                <div class="prop-legend-item"><span class="legend-indicator dot-bill"></span> Current Bill</div>
+                                <div class="prop-legend-item"><span class="legend-indicator dot-daily"></span> Daily Expenses</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="card">
                         <h3>Profile Settings</h3>
                         <div class="form-group">
