@@ -25,7 +25,7 @@ let state = {
     expenses: [],
     income: [],
     categories: [...DEFAULT_CATEGORIES],
-    dailyMeals: {}, // Map of monthKey -> mealConfig
+    dailyMeals: {}, // Legacy map of monthKey -> mealConfig
     dailyMealSettings: {
         name: 'PG Mess / Daily Meals',
         mealsPerDay: 2,
@@ -33,6 +33,17 @@ let state = {
         paymentMethod: 'UPI',
         category: 'Food'
     },
+    mealSettings: {
+        breakfastRate: 30,
+        lunchRate: 50,
+        dinnerRate: 50
+    },
+    mealPeriod: {
+        startDate: '',
+        endDate: ''
+    },
+    mealEntries: {}, // Map of 'YYYY-MM-DD' -> { date, breakfast, lunch, dinner, breakfastRate, lunchRate, dinnerRate, cost }
+    mealPayments: [], // Array of { id, date, amount, paymentMethod, note, createdAt }
     settings: {
         budget: 12000,
         savingsGoal: 3000,
@@ -51,6 +62,7 @@ let familyData = {
 };
 
 let currentFamilyTab = 'fam-tab-received';
+let currentMealTab = 'meal-tab-entries';
 
 /* ==========================================================================
    Initialization & LocalStorage
@@ -77,6 +89,10 @@ function loadData() {
     const settings = localStorage.getItem('pg_settings');
     const dailyMeals = localStorage.getItem('pg_daily_meals');
     const dailyMealSettings = localStorage.getItem('pg_daily_meal_settings');
+    const mealSettings = localStorage.getItem('pg_meal_settings');
+    const mealPeriod = localStorage.getItem('pg_meal_period');
+    const mealEntries = localStorage.getItem('pg_meal_entries');
+    const mealPayments = localStorage.getItem('pg_meal_payments');
 
     if (expenses) state.expenses = JSON.parse(expenses);
     if (income) state.income = JSON.parse(income);
@@ -84,6 +100,21 @@ function loadData() {
     if (settings) state.settings = { ...state.settings, ...JSON.parse(settings) };
     if (dailyMeals) state.dailyMeals = JSON.parse(dailyMeals);
     if (dailyMealSettings) state.dailyMealSettings = { ...state.dailyMealSettings, ...JSON.parse(dailyMealSettings) };
+    if (mealSettings) state.mealSettings = { ...state.mealSettings, ...JSON.parse(mealSettings) };
+    if (mealPeriod) state.mealPeriod = { ...state.mealPeriod, ...JSON.parse(mealPeriod) };
+    if (mealEntries) state.mealEntries = JSON.parse(mealEntries);
+    if (mealPayments) state.mealPayments = JSON.parse(mealPayments);
+
+    // Initialize default meal period if not set
+    if (!state.mealPeriod.startDate || !state.mealPeriod.endDate) {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = now.getMonth();
+        const firstDay = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+        const lastDayNum = new Date(y, m + 1, 0).getDate();
+        const lastDay = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+        state.mealPeriod = { startDate: firstDay, endDate: lastDay };
+    }
 }
 
 function saveData() {
@@ -93,6 +124,10 @@ function saveData() {
     localStorage.setItem('pg_settings', JSON.stringify(state.settings));
     localStorage.setItem('pg_daily_meals', JSON.stringify(state.dailyMeals));
     localStorage.setItem('pg_daily_meal_settings', JSON.stringify(state.dailyMealSettings));
+    localStorage.setItem('pg_meal_settings', JSON.stringify(state.mealSettings));
+    localStorage.setItem('pg_meal_period', JSON.stringify(state.mealPeriod));
+    localStorage.setItem('pg_meal_entries', JSON.stringify(state.mealEntries));
+    localStorage.setItem('pg_meal_payments', JSON.stringify(state.mealPayments));
 }
 
 /* ==========================================================================
@@ -273,6 +308,7 @@ function renderView(viewName) {
     switch(viewName) {
         case 'dashboard': renderDashboard(); break;
         case 'expenses': renderExpensesList(); break;
+        case 'daily-meals': renderDailyMealsView(); break;
         case 'analysis': renderAnalysis(); break;
         case 'calendar': renderCalendar(); break;
         case 'budget': renderBudget(); break;
@@ -467,289 +503,755 @@ function renderDashboardChart() {
 }
 
 /* ==========================================================================
-   Daily Meal Expense Logic & Helpers
+   Daily Meal, Rate System & Partial Payment Implementation
    ========================================================================== */
-function getDaysInSpecificMonth(year, month) {
-    // month is 1-indexed (1 to 12)
-    return new Date(year, month, 0).getDate();
-}
 
-function getActiveMonthKey() {
-    const filterDate = document.getElementById('filter-date')?.value;
-    const now = new Date();
-    if (filterDate === 'prev_month') {
-        const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        return getMonthKey(prev);
-    }
-    return getMonthKey(now);
-}
-
-function updateDailyMealLiveCalc() {
-    const mealCount = Math.max(1, parseInt(document.getElementById('meal-count')?.value, 10) || 1);
-    const mealCost = Math.max(0, parseFloat(document.getElementById('meal-cost')?.value) || 0);
-    const mealDays = Math.max(1, parseInt(document.getElementById('meal-days')?.value, 10) || 1);
+function getDatesInRange(startStr, endStr) {
+    const dates = [];
+    if (!startStr || !endStr) return dates;
     
-    const total = Math.round(mealCount * mealCost * mealDays);
-    const currency = state.settings.currency || '₹';
-
-    const formulaEl = document.getElementById('live-calc-formula');
-    if (formulaEl) {
-        formulaEl.textContent = `${mealCount} ${mealCount === 1 ? 'meal' : 'meals'}/day × ${currency}${mealCost} × ${mealDays} days`;
+    const [sy, sm, sd] = startStr.split('-').map(Number);
+    const [ey, em, ed] = endStr.split('-').map(Number);
+    
+    const curr = new Date(sy, sm - 1, sd, 12, 0, 0);
+    const end = new Date(ey, em - 1, ed, 12, 0, 0);
+    
+    let safetyCount = 0;
+    while (curr <= end && safetyCount < 120) {
+        const y = curr.getFullYear();
+        const m = String(curr.getMonth() + 1).padStart(2, '0');
+        const d = String(curr.getDate()).padStart(2, '0');
+        dates.push(`${y}-${m}-${d}`);
+        curr.setDate(curr.getDate() + 1);
+        safetyCount++;
     }
-
-    const totalEl = document.getElementById('live-calc-total');
-    if (totalEl) {
-        totalEl.textContent = formatCurrency(total);
-    }
-
-    const currLabel = document.getElementById('meal-currency-label');
-    if (currLabel) {
-        currLabel.textContent = currency;
-    }
+    return dates;
 }
 
-function openDailyMealModal(monthKey) {
-    const now = new Date();
-    const targetMonthKey = monthKey || getActiveMonthKey();
-    const [y, m] = targetMonthKey.split('-').map(Number);
-    const daysInMonth = getDaysInSpecificMonth(y, m);
+function getMealCalculations(startDate = state.mealPeriod.startDate, endDate = state.mealPeriod.endDate) {
+    const dates = getDatesInRange(startDate, endDate);
+    
+    let totalBreakfasts = 0;
+    let totalLunches = 0;
+    let totalDinners = 0;
+    
+    let breakfastCost = 0;
+    let lunchCost = 0;
+    let dinnerCost = 0;
 
-    // Check if configuration exists for this month
-    let config = state.dailyMeals[targetMonthKey];
-    if (!config) {
-        const existingExp = state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(targetMonthKey));
-        if (existingExp && existingExp.mealConfig) {
-            config = existingExp.mealConfig;
+    const defaultB = Number(state.mealSettings.breakfastRate) || 30;
+    const defaultL = Number(state.mealSettings.lunchRate) || 50;
+    const defaultD = Number(state.mealSettings.dinnerRate) || 50;
+
+    dates.forEach(dateStr => {
+        const entry = state.mealEntries[dateStr];
+        if (entry) {
+            const bRate = entry.breakfastRate !== undefined ? Number(entry.breakfastRate) : defaultB;
+            const lRate = entry.lunchRate !== undefined ? Number(entry.lunchRate) : defaultL;
+            const dRate = entry.dinnerRate !== undefined ? Number(entry.dinnerRate) : defaultD;
+
+            if (entry.breakfast) {
+                totalBreakfasts++;
+                breakfastCost += bRate;
+            }
+            if (entry.lunch) {
+                totalLunches++;
+                lunchCost += lRate;
+            }
+            if (entry.dinner) {
+                totalDinners++;
+                dinnerCost += dRate;
+            }
+        }
+    });
+
+    const totalMealBill = breakfastCost + lunchCost + dinnerCost;
+    const totalMealsCount = totalBreakfasts + totalLunches + totalDinners;
+
+    // Sum partial payments made within this period (or all payments if no filter applies)
+    let totalPaid = 0;
+    const periodPayments = state.mealPayments.filter(p => {
+        if (!startDate || !endDate) return true;
+        return p.date >= startDate && p.date <= endDate;
+    });
+
+    periodPayments.forEach(p => {
+        totalPaid += Number(p.amount || 0);
+    });
+
+    const remainingDue = Math.max(0, totalMealBill - totalPaid);
+    const advanceCredit = Math.max(0, totalPaid - totalMealBill);
+
+    return {
+        startDate,
+        endDate,
+        dates,
+        daysCount: dates.length,
+        totalBreakfasts,
+        totalLunches,
+        totalDinners,
+        breakfastCost,
+        lunchCost,
+        dinnerCost,
+        totalMealBill,
+        totalMealsCount,
+        totalPaid,
+        remainingDue,
+        advanceCredit,
+        paymentsCount: periodPayments.length
+    };
+}
+
+function renderDailyMealsView() {
+    const calc = getMealCalculations();
+
+    // Populate Rates inputs
+    const rateBInput = document.getElementById('rate-breakfast');
+    const rateLInput = document.getElementById('rate-lunch');
+    const rateDInput = document.getElementById('rate-dinner');
+    if (rateBInput) rateBInput.value = state.mealSettings.breakfastRate ?? 30;
+    if (rateLInput) rateLInput.value = state.mealSettings.lunchRate ?? 50;
+    if (rateDInput) rateDInput.value = state.mealSettings.dinnerRate ?? 50;
+
+    // Populate Period inputs
+    const periodStartInput = document.getElementById('meal-period-start');
+    const periodEndInput = document.getElementById('meal-period-end');
+    if (periodStartInput) periodStartInput.value = state.mealPeriod.startDate;
+    if (periodEndInput) periodEndInput.value = state.mealPeriod.endDate;
+
+    const activePeriodLabel = document.getElementById('meal-period-active-label');
+    if (activePeriodLabel) {
+        activePeriodLabel.textContent = `${formatDate(state.mealPeriod.startDate)} – ${formatDate(state.mealPeriod.endDate)}`;
+    }
+
+    const trackerSub = document.getElementById('meal-tracker-period-sub');
+    if (trackerSub) {
+        trackerSub.textContent = `Period: ${formatDate(state.mealPeriod.startDate)} to ${formatDate(state.mealPeriod.endDate)} (${calc.daysCount} days)`;
+    }
+
+    // Populate Meal Breakdown Cards
+    const sumBCount = document.getElementById('sum-breakfast-count');
+    const sumBCost = document.getElementById('sum-breakfast-cost');
+    const sumBHint = document.getElementById('sum-breakfast-rate-hint');
+    if (sumBCount) sumBCount.textContent = calc.totalBreakfasts;
+    if (sumBCost) sumBCost.textContent = formatCurrency(calc.breakfastCost);
+    if (sumBHint) sumBHint.textContent = `@ ₹${state.mealSettings.breakfastRate}/meal (Total: ${formatCurrency(calc.breakfastCost)})`;
+
+    const sumLCount = document.getElementById('sum-lunch-count');
+    const sumLCost = document.getElementById('sum-lunch-cost');
+    const sumLHint = document.getElementById('sum-lunch-rate-hint');
+    if (sumLCount) sumLCount.textContent = calc.totalLunches;
+    if (sumLCost) sumLCost.textContent = formatCurrency(calc.lunchCost);
+    if (sumLHint) sumLHint.textContent = `@ ₹${state.mealSettings.lunchRate}/meal (Total: ${formatCurrency(calc.lunchCost)})`;
+
+    const sumDCount = document.getElementById('sum-dinner-count');
+    const sumDCost = document.getElementById('sum-dinner-cost');
+    const sumDHint = document.getElementById('sum-dinner-rate-hint');
+    if (sumDCount) sumDCount.textContent = calc.totalDinners;
+    if (sumDCost) sumDCost.textContent = formatCurrency(calc.dinnerCost);
+    if (sumDHint) sumDHint.textContent = `@ ₹${state.mealSettings.dinnerRate}/meal (Total: ${formatCurrency(calc.dinnerCost)})`;
+
+    // Populate Financial Totals
+    const sumBill = document.getElementById('sum-total-meal-bill');
+    const sumMealsCount = document.getElementById('sum-total-meals-count');
+    if (sumBill) sumBill.textContent = formatCurrency(calc.totalMealBill);
+    if (sumMealsCount) {
+        sumMealsCount.innerHTML = `<i class="ph ph-fork-knife"></i> ${calc.totalMealsCount} ${calc.totalMealsCount === 1 ? 'meal taken' : 'meals taken'}`;
+    }
+
+    const sumPaid = document.getElementById('sum-total-paid');
+    const sumPaymentsCount = document.getElementById('sum-payments-count');
+    if (sumPaid) sumPaid.textContent = formatCurrency(calc.totalPaid);
+    if (sumPaymentsCount) {
+        sumPaymentsCount.innerHTML = `<i class="ph ph-receipt"></i> ${calc.paymentsCount} ${calc.paymentsCount === 1 ? 'partial payment' : 'partial payments'}`;
+    }
+
+    const sumDue = document.getElementById('sum-remaining-due');
+    const sumDueTitle = document.getElementById('sum-due-title');
+    const sumDueStatus = document.getElementById('sum-due-status-text');
+    const sumDueCard = document.getElementById('sum-due-card');
+
+    if (sumDue) {
+        if (calc.advanceCredit > 0) {
+            sumDue.textContent = formatCurrency(calc.advanceCredit);
+            if (sumDueTitle) sumDueTitle.textContent = 'Advance / Credit';
+            if (sumDueStatus) sumDueStatus.innerHTML = `<i class="ph ph-check-circle"></i> Paid in advance`;
+            if (sumDueCard) {
+                sumDueCard.className = 'summary-card meal-due-card positive';
+            }
+        } else {
+            sumDue.textContent = formatCurrency(calc.remainingDue);
+            if (sumDueTitle) sumDueTitle.textContent = 'Remaining Due';
+            if (sumDueStatus) {
+                sumDueStatus.innerHTML = calc.remainingDue > 0 
+                    ? `<i class="ph ph-warning-circle"></i> Pending payment` 
+                    : `<i class="ph ph-check-circle"></i> Fully paid / All clear`;
+            }
+            if (sumDueCard) {
+                sumDueCard.className = 'summary-card meal-due-card' + (calc.remainingDue > 0 ? ' has-due' : ' positive');
+            }
         }
     }
 
-    const modalTitle = document.getElementById('modal-daily-meal-title');
-    const nameInput = document.getElementById('meal-name');
-    const countInput = document.getElementById('meal-count');
-    const costInput = document.getElementById('meal-cost');
-    const monthInput = document.getElementById('meal-month');
-    const daysInput = document.getElementById('meal-days');
-    const paymentSelect = document.getElementById('meal-payment');
-    const categorySelect = document.getElementById('meal-category');
-    const btnDelete = document.getElementById('btn-delete-daily-meal');
+    // Update Tab Badges
+    const badgeDays = document.getElementById('meal-badge-days-count');
+    if (badgeDays) badgeDays.textContent = calc.daysCount;
 
-    if (monthInput) monthInput.value = targetMonthKey;
+    const badgePayments = document.getElementById('meal-badge-payments-count');
+    if (badgePayments) badgePayments.textContent = calc.paymentsCount;
 
-    if (config) {
-        if (modalTitle) modalTitle.textContent = 'Edit Daily Meal Expense';
-        if (nameInput) nameInput.value = config.name || 'PG Mess / Daily Meals';
-        if (countInput) countInput.value = config.mealsPerDay || 2;
-        if (costInput) costInput.value = config.costPerMeal || 50;
-        if (daysInput) daysInput.value = config.days || daysInMonth;
-        if (paymentSelect && config.paymentMethod) paymentSelect.value = config.paymentMethod;
-        if (categorySelect && config.category) categorySelect.value = config.category;
-        if (btnDelete) btnDelete.style.display = 'inline-flex';
-    } else {
-        if (modalTitle) modalTitle.textContent = 'Daily Meal Expense';
-        if (nameInput) nameInput.value = state.dailyMealSettings.name || 'PG Mess / Daily Meals';
-        if (countInput) countInput.value = state.dailyMealSettings.mealsPerDay || 2;
-        if (costInput) costInput.value = state.dailyMealSettings.costPerMeal || 50;
-        if (daysInput) daysInput.value = daysInMonth;
-        if (paymentSelect) paymentSelect.value = state.dailyMealSettings.paymentMethod || 'UPI';
-        if (categorySelect) categorySelect.value = state.dailyMealSettings.category || 'Food';
-        if (btnDelete) btnDelete.style.display = 'none';
-    }
+    // Update Payment Banner
+    const bannerBill = document.getElementById('banner-total-bill');
+    const bannerPaid = document.getElementById('banner-total-paid');
+    const bannerDue = document.getElementById('banner-remaining-due');
+    if (bannerBill) bannerBill.textContent = formatCurrency(calc.totalMealBill);
+    if (bannerPaid) bannerPaid.textContent = formatCurrency(calc.totalPaid);
+    if (bannerDue) bannerDue.textContent = calc.advanceCredit > 0 ? `+${formatCurrency(calc.advanceCredit)} (Advance)` : formatCurrency(calc.remainingDue);
 
-    // Update preset pills active state
-    if (nameInput) {
-        document.querySelectorAll('.preset-tag').forEach(tag => {
-            if (tag.dataset.val === nameInput.value) tag.classList.add('active');
-            else tag.classList.remove('active');
-        });
-    }
-
-    // Update stepper pills active state
-    if (countInput) {
-        document.querySelectorAll('.stepper-btn').forEach(btn => {
-            if (btn.dataset.val === String(countInput.value)) btn.classList.add('active');
-            else btn.classList.remove('active');
-        });
-    }
-
-    updateDailyMealLiveCalc();
-    openModal('daily-meal-modal');
+    renderMealDaysList();
+    renderMealPaymentsList();
 }
 
-function saveDailyMealExpense(e) {
-    e.preventDefault();
+function renderMealDaysList() {
+    const container = document.getElementById('meal-days-list');
+    if (!container) return;
 
-    const name = document.getElementById('meal-name').value.trim() || 'PG Mess / Daily Meals';
-    const mealsPerDay = Math.max(1, parseInt(document.getElementById('meal-count').value, 10) || 2);
-    const costPerMeal = Math.max(0, parseFloat(document.getElementById('meal-cost').value) || 0);
-    const monthKey = document.getElementById('meal-month').value || getMonthKey(new Date());
-    const days = Math.max(1, parseInt(document.getElementById('meal-days').value, 10) || 30);
-    const paymentMethod = document.getElementById('meal-payment').value || 'UPI';
-    const category = document.getElementById('meal-category').value || 'Food';
+    const search = (document.getElementById('search-meal-entries')?.value || '').toLowerCase().trim();
+    const dates = getDatesInRange(state.mealPeriod.startDate, state.mealPeriod.endDate);
+    const todayStr = getLocalDateString(new Date());
 
-    if (costPerMeal <= 0) {
-        showToast('Cost per meal must be greater than 0', 'error');
+    const defaultB = Number(state.mealSettings.breakfastRate) || 30;
+    const defaultL = Number(state.mealSettings.lunchRate) || 50;
+    const defaultD = Number(state.mealSettings.dinnerRate) || 50;
+
+    let filteredDates = dates;
+    if (search) {
+        filteredDates = dates.filter(d => {
+            const formatted = formatDate(d).toLowerCase();
+            const dayName = new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+            return d.includes(search) || formatted.includes(search) || dayName.includes(search);
+        });
+    }
+
+    if (filteredDates.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+                <i class="ph ph-calendar-x" style="font-size: 2.5rem; margin-bottom: 0.5rem; display: block; color: var(--text-secondary);"></i>
+                <p>No dates found for the selected period or search query.</p>
+            </div>
+        `;
         return;
     }
 
-    const totalAmount = Math.round(mealsPerDay * costPerMeal * days);
-    const description = `${name} (${mealsPerDay} meals/day × ${state.settings.currency}${costPerMeal} × ${days} days)`;
+    container.innerHTML = filteredDates.map(dateStr => {
+        const entry = state.mealEntries[dateStr] || {
+            date: dateStr,
+            breakfast: false,
+            lunch: false,
+            dinner: false,
+            breakfastRate: defaultB,
+            lunchRate: defaultL,
+            dinnerRate: defaultD,
+            cost: 0
+        };
 
-    // Check if an existing daily meal expense exists for this month
-    let existingIndex = state.expenses.findIndex(exp => exp.isDailyMeal && exp.date && exp.date.startsWith(monthKey));
+        const bRate = entry.breakfastRate !== undefined ? entry.breakfastRate : defaultB;
+        const lRate = entry.lunchRate !== undefined ? entry.lunchRate : defaultL;
+        const dRate = entry.dinnerRate !== undefined ? entry.dinnerRate : defaultD;
 
-    const mealConfig = {
-        name,
-        mealsPerDay,
-        costPerMeal,
-        days,
-        month: monthKey,
-        paymentMethod,
-        category,
-        totalAmount
+        const dayCost = (entry.breakfast ? bRate : 0) + (entry.lunch ? lRate : 0) + (entry.dinner ? dRate : 0);
+        const isToday = dateStr === todayStr;
+
+        const dObj = new Date(`${dateStr}T12:00:00`);
+        const dayNum = String(dObj.getDate()).padStart(2, '0');
+        const monthShort = dObj.toLocaleDateString('en-US', { month: 'short' });
+        const dayWeek = dObj.toLocaleDateString('en-US', { weekday: 'short' });
+        const fullDateStr = dObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+        return `
+            <div class="meal-day-row ${isToday ? 'is-today' : ''}" id="meal-row-${dateStr}">
+                <div class="meal-day-date-group">
+                    <div class="day-cal-icon">
+                        <span>${monthShort}</span>
+                        <span class="day-num">${dayNum}</span>
+                    </div>
+                    <div class="meal-day-info">
+                        <span class="meal-day-name">
+                            ${fullDateStr}
+                            ${isToday ? `<span class="meal-today-badge">Today</span>` : ''}
+                        </span>
+                        <span class="meal-day-sub">${dayWeek}</span>
+                    </div>
+                </div>
+
+                <div class="meal-day-toggles">
+                    <button type="button" class="meal-toggle-btn breakfast ${entry.breakfast ? 'active' : ''}" 
+                        onclick="toggleDayMeal('${dateStr}', 'breakfast')" title="Breakfast (₹${bRate})">
+                        <i class="ph ${entry.breakfast ? 'ph-check-circle' : 'ph-egg'}"></i>
+                        <span>Breakfast ₹${bRate}</span>
+                    </button>
+                    <button type="button" class="meal-toggle-btn lunch ${entry.lunch ? 'active' : ''}" 
+                        onclick="toggleDayMeal('${dateStr}', 'lunch')" title="Lunch (₹${lRate})">
+                        <i class="ph ${entry.lunch ? 'ph-check-circle' : 'ph-bowl-food'}"></i>
+                        <span>Lunch ₹${lRate}</span>
+                    </button>
+                    <button type="button" class="meal-toggle-btn dinner ${entry.dinner ? 'active' : ''}" 
+                        onclick="toggleDayMeal('${dateStr}', 'dinner')" title="Dinner (₹${dRate})">
+                        <i class="ph ${entry.dinner ? 'ph-check-circle' : 'ph-cooking-pot'}"></i>
+                        <span>Dinner ₹${dRate}</span>
+                    </button>
+                </div>
+
+                <div class="meal-day-right">
+                    <div class="meal-day-cost-badge ${dayCost === 0 ? 'zero' : ''}">
+                        ${dayCost > 0 ? formatCurrency(dayCost) : 'Skipped'}
+                    </div>
+                    <div class="meal-day-quick-actions">
+                        <button type="button" class="meal-day-btn-action" onclick="setDayMeals('${dateStr}', false, true, true)" title="Mark Lunch + Dinner">L+D</button>
+                        <button type="button" class="meal-day-btn-action" onclick="setDayMeals('${dateStr}', true, true, true)" title="Mark All 3">All 3</button>
+                        <button type="button" class="meal-day-btn-action" onclick="setDayMeals('${dateStr}', false, false, false)" title="Skip Day">Skip</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleDayMeal(dateStr, mealType) {
+    const defaultB = Number(state.mealSettings.breakfastRate) || 30;
+    const defaultL = Number(state.mealSettings.lunchRate) || 50;
+    const defaultD = Number(state.mealSettings.dinnerRate) || 50;
+
+    let entry = state.mealEntries[dateStr];
+    if (!entry) {
+        entry = {
+            date: dateStr,
+            breakfast: false,
+            lunch: false,
+            dinner: false,
+            breakfastRate: defaultB,
+            lunchRate: defaultL,
+            dinnerRate: defaultD,
+            cost: 0
+        };
+    }
+
+    // If rate wasn't set on existing entry, snapshot current default rate
+    if (entry.breakfastRate === undefined) entry.breakfastRate = defaultB;
+    if (entry.lunchRate === undefined) entry.lunchRate = defaultL;
+    if (entry.dinnerRate === undefined) entry.dinnerRate = defaultD;
+
+    entry[mealType] = !entry[mealType];
+    entry.cost = (entry.breakfast ? entry.breakfastRate : 0) + 
+                 (entry.lunch ? entry.lunchRate : 0) + 
+                 (entry.dinner ? entry.dinnerRate : 0);
+
+    state.mealEntries[dateStr] = entry;
+    saveData();
+    renderDailyMealsView();
+    renderDailyMealCard();
+}
+
+function setDayMeals(dateStr, breakfast, lunch, dinner) {
+    const defaultB = Number(state.mealSettings.breakfastRate) || 30;
+    const defaultL = Number(state.mealSettings.lunchRate) || 50;
+    const defaultD = Number(state.mealSettings.dinnerRate) || 50;
+
+    let entry = state.mealEntries[dateStr] || {
+        date: dateStr,
+        breakfastRate: defaultB,
+        lunchRate: defaultL,
+        dinnerRate: defaultD
     };
 
-    if (existingIndex > -1) {
-        const existingExp = state.expenses[existingIndex];
-        state.expenses[existingIndex] = {
-            ...existingExp,
-            amount: totalAmount,
-            category: category,
-            description: description,
-            paymentMethod: paymentMethod,
-            type: 'fixed',
-            isDailyMeal: true,
-            mealConfig: mealConfig
+    if (entry.breakfastRate === undefined) entry.breakfastRate = defaultB;
+    if (entry.lunchRate === undefined) entry.lunchRate = defaultL;
+    if (entry.dinnerRate === undefined) entry.dinnerRate = defaultD;
+
+    entry.breakfast = breakfast;
+    entry.lunch = lunch;
+    entry.dinner = dinner;
+    entry.cost = (entry.breakfast ? entry.breakfastRate : 0) + 
+                 (entry.lunch ? entry.lunchRate : 0) + 
+                 (entry.dinner ? entry.dinnerRate : 0);
+
+    state.mealEntries[dateStr] = entry;
+    saveData();
+    renderDailyMealsView();
+    renderDailyMealCard();
+}
+
+function bulkSetPeriodMeals(type) {
+    const dates = getDatesInRange(state.mealPeriod.startDate, state.mealPeriod.endDate);
+    if (dates.length === 0) return;
+
+    const defaultB = Number(state.mealSettings.breakfastRate) || 30;
+    const defaultL = Number(state.mealSettings.lunchRate) || 50;
+    const defaultD = Number(state.mealSettings.dinnerRate) || 50;
+
+    dates.forEach(dateStr => {
+        let entry = state.mealEntries[dateStr] || {
+            date: dateStr,
+            breakfastRate: defaultB,
+            lunchRate: defaultL,
+            dinnerRate: defaultD
         };
+
+        if (entry.breakfastRate === undefined) entry.breakfastRate = defaultB;
+        if (entry.lunchRate === undefined) entry.lunchRate = defaultL;
+        if (entry.dinnerRate === undefined) entry.dinnerRate = defaultD;
+
+        if (type === 'lunch-dinner') {
+            entry.breakfast = false;
+            entry.lunch = true;
+            entry.dinner = true;
+        } else if (type === 'all-three') {
+            entry.breakfast = true;
+            entry.lunch = true;
+            entry.dinner = true;
+        } else if (type === 'clear') {
+            entry.breakfast = false;
+            entry.lunch = false;
+            entry.dinner = false;
+        }
+
+        entry.cost = (entry.breakfast ? entry.breakfastRate : 0) + 
+                     (entry.lunch ? entry.lunchRate : 0) + 
+                     (entry.dinner ? entry.dinnerRate : 0);
+
+        state.mealEntries[dateStr] = entry;
+    });
+
+    saveData();
+    renderDailyMealsView();
+    renderDailyMealCard();
+    showToast(type === 'clear' ? 'Period meal entries cleared' : 'Bulk meals marked successfully');
+}
+
+function saveMealRates(e) {
+    if (e) e.preventDefault();
+    const rateB = Math.max(0, parseFloat(document.getElementById('rate-breakfast')?.value) || 0);
+    const rateL = Math.max(0, parseFloat(document.getElementById('rate-lunch')?.value) || 0);
+    const rateD = Math.max(0, parseFloat(document.getElementById('rate-dinner')?.value) || 0);
+
+    state.mealSettings = {
+        breakfastRate: rateB,
+        lunchRate: rateL,
+        dinnerRate: rateD
+    };
+
+    saveData();
+    renderDailyMealsView();
+    renderDailyMealCard();
+    showToast(`Meal rates saved (Breakfast: ₹${rateB}, Lunch: ₹${rateL}, Dinner: ₹${rateD}). Future entries will use these rates.`);
+}
+
+function saveMealPeriod(e) {
+    if (e) e.preventDefault();
+    const start = document.getElementById('meal-period-start')?.value;
+    const end = document.getElementById('meal-period-end')?.value;
+
+    if (!start || !end) {
+        showToast('Please select both Start Date and End Date', 'warning');
+        return;
+    }
+
+    if (start > end) {
+        showToast('Start Date cannot be after End Date', 'error');
+        return;
+    }
+
+    state.mealPeriod = { startDate: start, endDate: end };
+    saveData();
+    renderDailyMealsView();
+    renderDailyMealCard();
+    showToast(`Meal period set from ${formatDate(start)} to ${formatDate(end)}`);
+}
+
+function setMealPeriodPreset(preset) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const today = now.getDate();
+
+    let startDate = '';
+    let endDate = '';
+
+    if (preset === '17-cycle') {
+        // 17th of previous/current month to 16th of current/next month
+        if (today >= 17) {
+            const startObj = new Date(y, m, 17);
+            const endObj = new Date(y, m + 1, 16);
+            startDate = getLocalDateString(startObj);
+            endDate = getLocalDateString(endObj);
+        } else {
+            const startObj = new Date(y, m - 1, 17);
+            const endObj = new Date(y, m, 16);
+            startDate = getLocalDateString(startObj);
+            endDate = getLocalDateString(endObj);
+        }
+    } else if (preset === 'this-month') {
+        const startObj = new Date(y, m, 1);
+        const endObj = new Date(y, m + 1, 0);
+        startDate = getLocalDateString(startObj);
+        endDate = getLocalDateString(endObj);
+    } else if (preset === 'prev-month') {
+        const startObj = new Date(y, m - 1, 1);
+        const endObj = new Date(y, m, 0);
+        startDate = getLocalDateString(startObj);
+        endDate = getLocalDateString(endObj);
+    } else if (preset === '30-days') {
+        const startObj = new Date();
+        startObj.setDate(startObj.getDate() - 29);
+        startDate = getLocalDateString(startObj);
+        endDate = getLocalDateString(now);
+    }
+
+    if (startDate && endDate) {
+        const startEl = document.getElementById('meal-period-start');
+        const endEl = document.getElementById('meal-period-end');
+        if (startEl) startEl.value = startDate;
+        if (endEl) endEl.value = endDate;
+
+        document.querySelectorAll('.period-preset-btn').forEach(b => {
+            if (b.dataset.preset === preset) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+
+        saveMealPeriod();
+    }
+}
+
+// Partial Payments Functions
+function renderMealPaymentsList() {
+    const container = document.getElementById('meal-payments-list');
+    if (!container) return;
+
+    const startDate = state.mealPeriod.startDate;
+    const endDate = state.mealPeriod.endDate;
+
+    // Filter payments in active period
+    const payments = state.mealPayments.filter(p => {
+        if (!startDate || !endDate) return true;
+        return p.date >= startDate && p.date <= endDate;
+    });
+
+    // Sort newest date first
+    payments.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    if (payments.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-secondary);">
+                <i class="ph ph-hand-coins" style="font-size: 2.75rem; margin-bottom: 0.65rem; display: block; color: var(--primary);"></i>
+                <h4 style="color: var(--text-primary); margin-bottom: 0.35rem;">No Partial Payments Recorded</h4>
+                <p style="font-size: 0.85rem; max-width: 380px; margin: 0 auto 1rem;">You do not have to pay the full meal bill at once. Record multiple partial payments here anytime.</p>
+                <button class="primary-btn btn-sm" onclick="openMealPaymentModal()">
+                    <i class="ph-bold ph-plus-circle"></i> <span>Record First Payment</span>
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = payments.map(p => `
+        <div class="meal-payment-item">
+            <div class="meal-payment-left">
+                <div class="meal-payment-icon">
+                    <i class="ph ph-hand-coins"></i>
+                </div>
+                <div class="meal-payment-details">
+                    <span class="meal-payment-title">${formatCurrency(p.amount)} Paid</span>
+                    <div class="meal-payment-meta">
+                        <span><i class="ph ph-calendar-blank"></i> ${formatDate(p.date)}</span>
+                        <span class="method-tag">${escapeHtml(p.paymentMethod || 'UPI')}</span>
+                        ${p.note ? `<span><i class="ph ph-note"></i> ${escapeHtml(p.note)}</span>` : ''}
+                    </div>
+                </div>
+            </div>
+            <div class="meal-payment-right">
+                <span class="meal-payment-amount">+${formatCurrency(p.amount)}</span>
+                <button class="record-action-btn delete" title="Delete Payment Record" onclick="deleteMealPayment('${p.id}')">
+                    <i class="ph ph-trash"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openMealPaymentModal(editId = null) {
+    const form = document.getElementById('meal-payment-form');
+    if (!form) return;
+    form.reset();
+
+    const titleEl = document.getElementById('modal-meal-payment-title');
+    const idInput = document.getElementById('meal-payment-id');
+    const calc = getMealCalculations();
+
+    const fullDueBtn = document.getElementById('btn-quick-pay-full-due');
+    if (fullDueBtn) {
+        const remainingDue = calc.remainingDue;
+        fullDueBtn.textContent = remainingDue > 0 ? `Pay Full Due (${formatCurrency(remainingDue)})` : 'Full Paid';
+        fullDueBtn.dataset.due = remainingDue;
+    }
+
+    if (editId) {
+        const p = state.mealPayments.find(item => item.id === editId);
+        if (p) {
+            if (titleEl) titleEl.textContent = 'Edit Meal Payment';
+            idInput.value = p.id;
+            document.getElementById('meal-payment-amount').value = p.amount;
+            document.getElementById('meal-payment-date').value = p.date;
+            document.getElementById('meal-payment-method').value = p.paymentMethod || 'UPI';
+            document.getElementById('meal-payment-note').value = p.note || '';
+        }
     } else {
-        const newExp = {
-            id: Date.now(),
-            amount: totalAmount,
-            category: category,
-            date: `${monthKey}-01`,
-            paymentMethod: paymentMethod,
-            type: 'fixed',
-            description: description,
-            isDailyMeal: true,
-            mealConfig: mealConfig
+        if (titleEl) titleEl.textContent = 'Record Meal Payment';
+        idInput.value = '';
+        document.getElementById('meal-payment-date').value = getLocalDateString(new Date());
+        document.getElementById('meal-payment-method').value = 'UPI';
+        // Auto-suggest remaining due if greater than 0
+        if (calc.remainingDue > 0) {
+            document.getElementById('meal-payment-amount').value = calc.remainingDue;
+        }
+    }
+
+    openModal('meal-payment-modal');
+}
+
+function saveMealPayment(e) {
+    e.preventDefault();
+    const id = document.getElementById('meal-payment-id').value;
+    const amount = parseFloat(document.getElementById('meal-payment-amount').value);
+    const date = document.getElementById('meal-payment-date').value;
+    const paymentMethod = document.getElementById('meal-payment-method').value;
+    const note = document.getElementById('meal-payment-note').value.trim();
+
+    if (!amount || amount <= 0 || !date) {
+        showToast('Please enter a valid payment amount and date', 'warning');
+        return;
+    }
+
+    if (id) {
+        const idx = state.mealPayments.findIndex(p => p.id === id);
+        if (idx !== -1) {
+            state.mealPayments[idx] = {
+                ...state.mealPayments[idx],
+                amount,
+                date,
+                paymentMethod,
+                note,
+                updatedAt: new Date().toISOString()
+            };
+            showToast('Meal payment updated successfully');
+        }
+    } else {
+        const newPayment = {
+            id: 'mp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            amount,
+            date,
+            paymentMethod,
+            note,
+            createdAt: new Date().toISOString()
         };
-        state.expenses.push(newExp);
-    }
-
-    // Save to state.dailyMeals map
-    state.dailyMeals[monthKey] = mealConfig;
-
-    // Save default meal preferences
-    state.dailyMealSettings = {
-        name,
-        mealsPerDay,
-        costPerMeal,
-        paymentMethod,
-        category
-    };
-
-    saveData();
-    closeModal('daily-meal-modal');
-    showToast('Daily Meal Expense saved successfully!');
-    renderView(state.currentView);
-}
-
-async function deleteDailyMealPlan(monthKey) {
-    const targetMonth = monthKey || document.getElementById('meal-month')?.value || getMonthKey(new Date());
-    const confirmed = await showConfirm('Remove Daily Meal Plan?', `Delete the daily meal expense plan for ${targetMonth}?`);
-    if (confirmed) {
-        state.expenses = state.expenses.filter(e => !(e.isDailyMeal && e.date && e.date.startsWith(targetMonth)));
-        delete state.dailyMeals[targetMonth];
-        saveData();
-        closeModal('daily-meal-modal');
-        showToast('Daily meal plan removed');
-        renderView(state.currentView);
-    }
-}
-
-function quickAdjustDailyMealDays(monthKey, delta) {
-    const config = state.dailyMeals[monthKey] || state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(monthKey))?.mealConfig;
-    if (!config) return;
-
-    const [y, m] = monthKey.split('-').map(Number);
-    const maxDays = getDaysInSpecificMonth(y, m);
-    const newDays = Math.min(maxDays, Math.max(1, (config.days || maxDays) + delta));
-
-    if (newDays === config.days) return;
-
-    config.days = newDays;
-    config.totalAmount = Math.round(config.mealsPerDay * config.costPerMeal * newDays);
-    const description = `${config.name} (${config.mealsPerDay} meals/day × ${state.settings.currency}${config.costPerMeal} × ${newDays} days)`;
-
-    state.dailyMeals[monthKey] = { ...config };
-
-    // Sync expense item in state.expenses
-    const exp = state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(monthKey));
-    if (exp) {
-        exp.amount = config.totalAmount;
-        exp.description = description;
-        exp.mealConfig = { ...config };
+        state.mealPayments.unshift(newPayment);
+        showToast(`Meal payment of ${formatCurrency(amount)} recorded successfully`);
     }
 
     saveData();
-    renderView(state.currentView);
-    showToast(`Meal days updated to ${newDays} (${formatCurrency(config.totalAmount)})`);
+    closeModal('meal-payment-modal');
+    renderDailyMealsView();
+    renderDailyMealCard();
+}
+
+function deleteMealPayment(id) {
+    const p = state.mealPayments.find(item => item.id === id);
+    if (!p) return;
+
+    showConfirmModal(
+        'Delete Meal Payment Record?',
+        `Are you sure you want to delete this payment of ${formatCurrency(p.amount)} recorded on ${formatDate(p.date)}?`,
+        () => {
+            state.mealPayments = state.mealPayments.filter(item => item.id !== id);
+            saveData();
+            renderDailyMealsView();
+            renderDailyMealCard();
+            showToast('Payment record deleted');
+        }
+    );
 }
 
 function renderDailyMealCard() {
     const container = document.getElementById('daily-meal-card');
     if (!container) return;
 
-    const monthKey = getActiveMonthKey();
-    const config = state.dailyMeals[monthKey] || state.expenses.find(e => e.isDailyMeal && e.date && e.date.startsWith(monthKey))?.mealConfig;
+    const calc = getMealCalculations();
+    const todayStr = getLocalDateString(new Date());
+    const defaultB = Number(state.mealSettings.breakfastRate) || 30;
+    const defaultL = Number(state.mealSettings.lunchRate) || 50;
+    const defaultD = Number(state.mealSettings.dinnerRate) || 50;
 
-    if (config) {
-        const formula = `${config.mealsPerDay} meals/day × ${state.settings.currency}${config.costPerMeal} × ${config.days} days`;
-        container.innerHTML = `
-            <div class="daily-meal-card-header">
-                <div class="daily-meal-title-group">
-                    <div class="daily-meal-icon-badge"><i class="ph ph-cooking-pot"></i></div>
-                    <div>
-                        <h3>${config.name || 'PG Mess / Daily Meals'} <span class="meal-badge"><i class="ph ph-repeat"></i> Recurring</span></h3>
-                        <span class="daily-meal-subtitle">Auto-tracked monthly meal expense</span>
+    const todayEntry = state.mealEntries[todayStr] || {
+        date: todayStr,
+        breakfast: false,
+        lunch: false,
+        dinner: false,
+        breakfastRate: defaultB,
+        lunchRate: defaultL,
+        dinnerRate: defaultD,
+        cost: 0
+    };
+
+    const bRate = todayEntry.breakfastRate !== undefined ? todayEntry.breakfastRate : defaultB;
+    const lRate = todayEntry.lunchRate !== undefined ? todayEntry.lunchRate : defaultL;
+    const dRate = todayEntry.dinnerRate !== undefined ? todayEntry.dinnerRate : defaultD;
+
+    const dueText = calc.advanceCredit > 0 
+        ? `<span style="color: var(--success);">Advance: ${formatCurrency(calc.advanceCredit)}</span>`
+        : `<span style="color: ${calc.remainingDue > 0 ? 'var(--danger)' : 'var(--success)'};">Due: ${formatCurrency(calc.remainingDue)}</span>`;
+
+    container.innerHTML = `
+        <div class="daily-meal-card-header">
+            <div class="daily-meal-title-group">
+                <div class="daily-meal-icon-badge"><i class="ph ph-cooking-pot"></i></div>
+                <div>
+                    <h3>PG Mess Daily Meals <span class="meal-badge"><i class="ph ph-calendar"></i> ${formatDate(state.mealPeriod.startDate)} – ${formatDate(state.mealPeriod.endDate)}</span></h3>
+                    <span class="daily-meal-subtitle">Track breakfast, lunch, dinner rates & partial payments</span>
+                </div>
+            </div>
+            <button class="primary-btn btn-sm" onclick="renderView('daily-meals')">
+                <i class="ph ph-cooking-pot"></i> Open Meal Manager
+            </button>
+        </div>
+        <div class="daily-meal-content">
+            <div class="daily-meal-details">
+                <div class="daily-meal-formula-pill">
+                    <i class="ph ph-receipt"></i> Total: ${formatCurrency(calc.totalMealBill)} (${calc.totalMealsCount} meals) • Paid: ${formatCurrency(calc.totalPaid)} • ${dueText}
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 0.4rem;">
+                    <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-secondary);">Today's Quick Mark:</span>
+                    <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                        <button type="button" class="meal-toggle-btn breakfast ${todayEntry.breakfast ? 'active' : ''}" 
+                            onclick="toggleDayMeal('${todayStr}', 'breakfast')" style="padding: 0.2rem 0.55rem; font-size: 0.72rem;">
+                            <i class="ph ${todayEntry.breakfast ? 'ph-check-circle' : 'ph-egg'}"></i> Breakfast (₹${bRate})
+                        </button>
+                        <button type="button" class="meal-toggle-btn lunch ${todayEntry.lunch ? 'active' : ''}" 
+                            onclick="toggleDayMeal('${todayStr}', 'lunch')" style="padding: 0.2rem 0.55rem; font-size: 0.72rem;">
+                            <i class="ph ${todayEntry.lunch ? 'ph-check-circle' : 'ph-bowl-food'}"></i> Lunch (₹${lRate})
+                        </button>
+                        <button type="button" class="meal-toggle-btn dinner ${todayEntry.dinner ? 'active' : ''}" 
+                            onclick="toggleDayMeal('${todayStr}', 'dinner')" style="padding: 0.2rem 0.55rem; font-size: 0.72rem;">
+                            <i class="ph ${todayEntry.dinner ? 'ph-check-circle' : 'ph-cooking-pot'}"></i> Dinner (₹${dRate})
+                        </button>
                     </div>
                 </div>
-                <button class="secondary-btn btn-sm" onclick="openDailyMealModal('${monthKey}')">
-                    <i class="ph ph-pencil-simple"></i> Edit Plan
+            </div>
+            <div class="daily-meal-quick-actions">
+                <button class="secondary-btn btn-sm" onclick="openMealPaymentModal()" title="Record Partial Payment">
+                    <i class="ph-bold ph-plus-circle"></i> Pay Meal Due
                 </button>
             </div>
-            <div class="daily-meal-content">
-                <div class="daily-meal-details">
-                    <div class="daily-meal-formula-pill">
-                        <i class="ph ph-receipt"></i> ${formula}
-                    </div>
-                    <div class="daily-meal-total">${formatCurrency(config.totalAmount)} <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);">this month</span></div>
-                </div>
-                <div class="daily-meal-quick-actions">
-                    <span style="font-size: 0.8rem; color: var(--text-secondary);">Days Eaten:</span>
-                    <div class="daily-meal-days-adjust">
-                        <button type="button" title="Reduce days" onclick="quickAdjustDailyMealDays('${monthKey}', -1)">−</button>
-                        <span class="daily-meal-days-val">${config.days}</span>
-                        <button type="button" title="Increase days" onclick="quickAdjustDailyMealDays('${monthKey}', 1)">+</button>
-                    </div>
-                </div>
-            </div>
-        `;
-    } else {
-        container.innerHTML = `
-            <div class="daily-meal-card-header" style="margin-bottom: 0;">
-                <div class="daily-meal-title-group">
-                    <div class="daily-meal-icon-badge"><i class="ph ph-cooking-pot"></i></div>
-                    <div>
-                        <h3>Daily Meal Expense (Recurring)</h3>
-                        <span class="daily-meal-subtitle">Track 2 meals/day or mess food monthly without logging every meal</span>
-                    </div>
-                </div>
-                <button class="primary-btn btn-sm" onclick="openDailyMealModal('${monthKey}')">
-                    <i class="ph ph-plus"></i> Set Up Plan
-                </button>
-            </div>
-        `;
-    }
+        </div>
+    `;
 }
 
 /* ==========================================================================
@@ -1048,15 +1550,18 @@ function renderCalendar() {
     const month = currentCalendarDate.getMonth();
     const monthObj = new Date(year, month, 1);
     const monthYearStr = monthObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    document.getElementById('cal-month-year').textContent = monthYearStr;
+    
+    const monthYearEl = document.getElementById('cal-month-year');
+    if (monthYearEl) monthYearEl.textContent = monthYearStr;
 
     const grid = document.getElementById('calendar-days');
+    if (!grid) return;
     grid.innerHTML = '';
 
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayStr = getLocalDateString(now);
     const currentMonthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
 
     // If no selected date or selected date is in another month, default to today or 1st
@@ -1068,29 +1573,45 @@ function renderCalendar() {
         }
     }
 
-    // Calculate daily expenses for the month
+    // Calculate daily expenses (transactions + daily mess meals) for the month
     const dailyExpenses = {};
+    const dailyMealFlags = {};
+
     state.expenses.forEach(e => {
-        if(e.date && e.date.startsWith(currentMonthKey)) {
-            dailyExpenses[e.date] = (dailyExpenses[e.date] || 0) + Number(e.amount);
+        if (e.date && e.date.startsWith(currentMonthKey)) {
+            dailyExpenses[e.date] = (dailyExpenses[e.date] || 0) + Number(e.amount || 0);
         }
     });
 
+    if (state.mealEntries) {
+        Object.keys(state.mealEntries).forEach(dateStr => {
+            if (dateStr.startsWith(currentMonthKey)) {
+                const mealEntry = state.mealEntries[dateStr];
+                const cost = Number(mealEntry?.cost || 0);
+                if (cost > 0) {
+                    dailyExpenses[dateStr] = (dailyExpenses[dateStr] || 0) + cost;
+                    dailyMealFlags[dateStr] = true;
+                }
+            }
+        });
+    }
+
     // Find max for highlighting
     let maxDaily = 0;
-    Object.values(dailyExpenses).forEach(v => { if(v > maxDaily) maxDaily = v; });
+    Object.values(dailyExpenses).forEach(v => { if (v > maxDaily) maxDaily = v; });
 
     // Empty cells for first day
-    for(let i = 0; i < firstDay; i++) {
+    for (let i = 0; i < firstDay; i++) {
         grid.innerHTML += `<div class="cal-day empty"></div>`;
     }
 
     // Days
-    for(let d = 1; d <= daysInMonth; d++) {
+    for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const isToday = dateStr === todayStr;
         const isSelected = dateStr === selectedCalendarDate;
         const amount = dailyExpenses[dateStr] || 0;
+        const hasMeal = !!dailyMealFlags[dateStr];
         
         let highlightClass = '';
         if (amount > 0) {
@@ -1105,6 +1626,7 @@ function renderCalendar() {
             <div class="cal-day ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${highlightClass}" data-date="${dateStr}" onclick="showCalendarDetails('${dateStr}')">
                 <span class="cal-date">${d}</span>
                 ${amountText ? `<span class="cal-amount">${amountText}</span>` : ''}
+                ${hasMeal ? `<span class="cal-meal-dot" title="Daily Meal recorded"></span>` : ''}
             </div>
         `;
     }
@@ -1140,21 +1662,51 @@ function showCalendarDetails(dateStr) {
     list.innerHTML = '';
     
     const dayExps = state.expenses.filter(e => e.date === dateStr);
-    const dayTotal = dayExps.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const mealEntry = state.mealEntries ? state.mealEntries[dateStr] : null;
+    const mealCost = (mealEntry && mealEntry.cost > 0) ? mealEntry.cost : 0;
+    
+    const expTotal = dayExps.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const dayTotal = expTotal + mealCost;
     
     const totalBadge = document.getElementById('cal-selected-total');
     if (totalBadge) totalBadge.textContent = `Total: ${formatCurrency(dayTotal)}`;
 
-    if(dayExps.length === 0) {
+    if (dayExps.length === 0 && mealCost === 0) {
         list.innerHTML = `
             <div style="padding: 1.5rem 1rem; text-align: center; color: var(--text-secondary);">
                 <i class="ph ph-receipt-x" style="font-size: 2.2rem; color: var(--text-secondary); opacity: 0.5; display: block; margin-bottom: 0.5rem;"></i>
-                <p style="font-size: 0.9rem;">No expenses recorded on this day.</p>
+                <p style="font-size: 0.9rem;">No expenses or meals recorded on this day.</p>
             </div>
         `;
         return;
     }
 
+    // Render Daily Mess Meal item if present for this date
+    if (mealCost > 0 && mealEntry) {
+        const mealParts = [];
+        if (mealEntry.breakfast) mealParts.push(`Breakfast (₹${mealEntry.breakfastRate ?? 30})`);
+        if (mealEntry.lunch) mealParts.push(`Lunch (₹${mealEntry.lunchRate ?? 50})`);
+        if (mealEntry.dinner) mealParts.push(`Dinner (₹${mealEntry.dinnerRate ?? 50})`);
+
+        list.innerHTML += `
+            <div class="expense-item" style="padding: 0.75rem 0.5rem; background: rgba(79, 70, 229, 0.06); border-radius: var(--radius-sm); margin-bottom: 0.5rem; border: 1px solid rgba(79, 70, 229, 0.2);">
+                <div class="expense-left">
+                    <div class="cat-icon" style="width:36px;height:36px;font-size:1.1rem;background:linear-gradient(135deg, var(--primary), #818cf8);color:white;">
+                        <i class="ph ph-cooking-pot"></i>
+                    </div>
+                    <div class="expense-details">
+                        <span class="expense-title">Daily Mess Meals <span class="meal-badge"><i class="ph ph-check-circle"></i> Taken</span></span>
+                        <span class="expense-meta">${mealParts.join(' • ')}</span>
+                    </div>
+                </div>
+                <div class="expense-right">
+                    <span class="expense-amount" style="color: var(--primary); font-weight: 800;">${formatCurrency(mealCost)}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // Render regular expenses
     dayExps.forEach(exp => {
         list.innerHTML += `
             <div class="expense-item" style="padding: 0.75rem 0.5rem;">
@@ -1525,28 +2077,56 @@ async function deleteCategory(index) {
    Data Export & Import
    ========================================================================== */
 function exportExcel() {
-    if(state.expenses.length === 0) {
-        showToast('No expenses to export', 'error');
+    const workbook = XLSX.utils.book_new();
+
+    // 1. Expenses Sheet
+    if (state.expenses.length > 0) {
+        const data = state.expenses.map(e => ({
+            Date: e.date,
+            Category: e.category,
+            Description: e.description || '',
+            Amount: e.amount,
+            'Payment Method': e.paymentMethod,
+            Type: e.type
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Expenses");
+    }
+
+    // 2. Meal Entries Sheet
+    const mealEntriesList = Object.values(state.mealEntries).filter(e => e.breakfast || e.lunch || e.dinner);
+    if (mealEntriesList.length > 0) {
+        mealEntriesList.sort((a, b) => new Date(a.date) - new Date(b.date));
+        const mealData = mealEntriesList.map(e => ({
+            Date: e.date,
+            Breakfast: e.breakfast ? `Yes (₹${e.breakfastRate || 30})` : 'No',
+            Lunch: e.lunch ? `Yes (₹${e.lunchRate || 50})` : 'No',
+            Dinner: e.dinner ? `Yes (₹${e.dinnerRate || 50})` : 'No',
+            'Day Total (₹)': e.cost
+        }));
+        const mealWorksheet = XLSX.utils.json_to_sheet(mealData);
+        XLSX.utils.book_append_sheet(workbook, mealWorksheet, "Daily Meals");
+    }
+
+    // 3. Meal Payments Sheet
+    if (state.mealPayments.length > 0) {
+        const payData = state.mealPayments.map(p => ({
+            Date: p.date,
+            'Amount Paid (₹)': p.amount,
+            'Payment Method': p.paymentMethod || 'UPI',
+            Note: p.note || ''
+        }));
+        const payWorksheet = XLSX.utils.json_to_sheet(payData);
+        XLSX.utils.book_append_sheet(workbook, payWorksheet, "Meal Payments");
+    }
+
+    if (workbook.SheetNames.length === 0) {
+        showToast('No data to export', 'error');
         return;
     }
-    
-    // Prepare data for Excel
-    const data = state.expenses.map(e => ({
-        Date: e.date,
-        Category: e.category,
-        Description: e.description || '',
-        Amount: e.amount,
-        'Payment Method': e.paymentMethod,
-        Type: e.type
-    }));
-
-    // Generate workbook and worksheet
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Expenses");
 
     // Download the file
-    XLSX.writeFile(workbook, `PG_Expenses_${getMonthKey(new Date())}.xlsx`);
+    XLSX.writeFile(workbook, `PG_Expenses_and_Meals_${getMonthKey(new Date())}.xlsx`);
     showToast('Excel Downloaded Successfully');
 }
 
@@ -1675,93 +2255,141 @@ function setupEventListeners() {
     });
     document.getElementById('btn-close-income-modal').addEventListener('click', () => closeModal('income-modal'));
 
-    // Daily Meal Modal Controls
+    // Daily Meal Navigation and Quick Actions
     const btnOpenDailyMeal = document.getElementById('btn-open-daily-meal');
     if (btnOpenDailyMeal) {
-        btnOpenDailyMeal.addEventListener('click', () => openDailyMealModal());
+        btnOpenDailyMeal.addEventListener('click', () => renderView('daily-meals'));
     }
 
     const linkOpenDailyMeal = document.getElementById('link-open-daily-meal');
     if (linkOpenDailyMeal) {
         linkOpenDailyMeal.addEventListener('click', () => {
             closeModal('expense-modal');
-            openDailyMealModal();
+            renderView('daily-meals');
         });
     }
 
-    const btnCloseDailyMealModal = document.getElementById('btn-close-daily-meal-modal');
-    if (btnCloseDailyMealModal) {
-        btnCloseDailyMealModal.addEventListener('click', () => closeModal('daily-meal-modal'));
-    }
-
-    const btnCancelDailyMeal = document.getElementById('btn-cancel-daily-meal');
-    if (btnCancelDailyMeal) {
-        btnCancelDailyMeal.addEventListener('click', () => closeModal('daily-meal-modal'));
-    }
-
-    const dailyMealForm = document.getElementById('daily-meal-form');
-    if (dailyMealForm) {
-        dailyMealForm.addEventListener('submit', saveDailyMealExpense);
-    }
-
-    const btnDeleteDailyMeal = document.getElementById('btn-delete-daily-meal');
-    if (btnDeleteDailyMeal) {
-        btnDeleteDailyMeal.addEventListener('click', () => {
-            const m = document.getElementById('meal-month')?.value;
-            deleteDailyMealPlan(m);
-        });
-    }
-
-    // Daily Meal Real-time Calculation & Change Listeners
-    ['meal-count', 'meal-cost', 'meal-days'].forEach(id => {
-        const input = document.getElementById(id);
-        if (input) {
-            input.addEventListener('input', updateDailyMealLiveCalc);
-            input.addEventListener('change', updateDailyMealLiveCalc);
-        }
-    });
-
-    const mealMonthInput = document.getElementById('meal-month');
-    if (mealMonthInput) {
-        mealMonthInput.addEventListener('change', () => {
-            const mVal = mealMonthInput.value;
-            if (mVal) {
-                const [y, m] = mVal.split('-').map(Number);
-                const daysInMonth = getDaysInSpecificMonth(y, m);
-                const daysInput = document.getElementById('meal-days');
-                if (daysInput) {
-                    daysInput.max = daysInMonth;
-                    daysInput.value = daysInMonth;
-                }
-                updateDailyMealLiveCalc();
+    const btnToggleRates = document.getElementById('btn-toggle-meal-rates');
+    if (btnToggleRates) {
+        btnToggleRates.addEventListener('click', () => {
+            const panel = document.getElementById('meal-rates-panel');
+            if (panel) {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const bInput = document.getElementById('rate-breakfast');
+                if (bInput) bInput.focus();
             }
         });
     }
 
-    // Daily Meal Preset Tags
-    document.querySelectorAll('.preset-tag').forEach(tag => {
-        tag.addEventListener('click', () => {
-            const val = tag.dataset.val;
-            const nameInput = document.getElementById('meal-name');
-            if (nameInput) {
-                nameInput.value = val;
-            }
-            document.querySelectorAll('.preset-tag').forEach(t => t.classList.remove('active'));
-            tag.classList.add('active');
+    const btnOpenAddMealPay = document.getElementById('btn-open-add-meal-payment');
+    if (btnOpenAddMealPay) {
+        btnOpenAddMealPay.addEventListener('click', () => openMealPaymentModal());
+    }
+
+    const btnAddPartialPay = document.getElementById('btn-add-partial-payment');
+    if (btnAddPartialPay) {
+        btnAddPartialPay.addEventListener('click', () => openMealPaymentModal());
+    }
+
+    // Meal Rates Form Submit
+    const mealRatesForm = document.getElementById('meal-rates-form');
+    if (mealRatesForm) {
+        mealRatesForm.addEventListener('submit', saveMealRates);
+    }
+
+    // Meal Period Form Submit & Presets
+    const mealPeriodForm = document.getElementById('meal-period-form');
+    if (mealPeriodForm) {
+        mealPeriodForm.addEventListener('submit', saveMealPeriod);
+    }
+
+    document.querySelectorAll('.period-preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const preset = btn.dataset.preset;
+            if (preset) setMealPeriodPreset(preset);
         });
     });
 
-    // Daily Meal Stepper Buttons (1, 2, 3 meals)
-    document.querySelectorAll('.stepper-btn').forEach(btn => {
+    // Meal Tabs Switcher (Daily Entries vs Payments)
+    const tabBtnDailyEntries = document.getElementById('tab-btn-daily-entries');
+    const tabBtnMealPayments = document.getElementById('tab-btn-meal-payments');
+
+    if (tabBtnDailyEntries && tabBtnMealPayments) {
+        tabBtnDailyEntries.addEventListener('click', () => {
+            tabBtnDailyEntries.classList.add('active');
+            tabBtnMealPayments.classList.remove('active');
+            document.getElementById('meal-tab-entries')?.classList.remove('hidden');
+            document.getElementById('meal-tab-entries')?.classList.add('active');
+            document.getElementById('meal-tab-payments')?.classList.add('hidden');
+            document.getElementById('meal-tab-payments')?.classList.remove('active');
+        });
+
+        tabBtnMealPayments.addEventListener('click', () => {
+            tabBtnMealPayments.classList.add('active');
+            tabBtnDailyEntries.classList.remove('active');
+            document.getElementById('meal-tab-payments')?.classList.remove('hidden');
+            document.getElementById('meal-tab-payments')?.classList.add('active');
+            document.getElementById('meal-tab-entries')?.classList.add('hidden');
+            document.getElementById('meal-tab-entries')?.classList.remove('active');
+        });
+    }
+
+    // Meal Bulk Action Buttons
+    const btnBulkLD = document.getElementById('btn-bulk-lunch-dinner');
+    if (btnBulkLD) {
+        btnBulkLD.addEventListener('click', () => bulkSetPeriodMeals('lunch-dinner'));
+    }
+
+    const btnBulkAll = document.getElementById('btn-bulk-all-three');
+    if (btnBulkAll) {
+        btnBulkAll.addEventListener('click', () => bulkSetPeriodMeals('all-three'));
+    }
+
+    const btnBulkClear = document.getElementById('btn-bulk-clear');
+    if (btnBulkClear) {
+        btnBulkClear.addEventListener('click', async () => {
+            const confirmed = await showConfirm('Clear Period Meal Entries?', 'Reset all meal markers for the selected period?');
+            if (confirmed) {
+                bulkSetPeriodMeals('clear');
+            }
+        });
+    }
+
+    // Meal Days Search Filter
+    const searchMealInput = document.getElementById('search-meal-entries');
+    if (searchMealInput) {
+        searchMealInput.addEventListener('input', renderMealDaysList);
+    }
+
+    // Meal Payment Modal Listeners
+    const btnCloseMealPayModal = document.getElementById('btn-close-meal-payment-modal');
+    if (btnCloseMealPayModal) {
+        btnCloseMealPayModal.addEventListener('click', () => closeModal('meal-payment-modal'));
+    }
+
+    const btnCancelMealPay = document.getElementById('btn-cancel-meal-payment');
+    if (btnCancelMealPay) {
+        btnCancelMealPay.addEventListener('click', () => closeModal('meal-payment-modal'));
+    }
+
+    const mealPaymentForm = document.getElementById('meal-payment-form');
+    if (mealPaymentForm) {
+        mealPaymentForm.addEventListener('submit', saveMealPayment);
+    }
+
+    // Quick amounts for Meal Payment Modal
+    document.querySelectorAll('.quick-btn-meal-pay').forEach(btn => {
         btn.addEventListener('click', () => {
             const val = btn.dataset.val;
-            const countInput = document.getElementById('meal-count');
-            if (countInput) {
-                countInput.value = val;
-                updateDailyMealLiveCalc();
+            const input = document.getElementById('meal-payment-amount');
+            if (!input) return;
+
+            if (val === 'due') {
+                const dueAmount = parseFloat(btn.dataset.due || 0);
+                input.value = dueAmount > 0 ? dueAmount : 0;
+            } else {
+                input.value = (parseFloat(input.value || 0) + parseFloat(val)).toString();
             }
-            document.querySelectorAll('.stepper-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
         });
     });
 
@@ -1934,6 +2562,34 @@ function generateMonthlyPDFReport(selectedMonthKey) {
         </tr>
     `).join('');
 
+    // Meal Calculations for the month
+    const monthMealDates = Object.keys(state.mealEntries).filter(d => d.startsWith(monthKey) && state.mealEntries[d]?.cost > 0);
+    let mealSectionHtml = '';
+    if (monthMealDates.length > 0) {
+        const daysInM = new Date(y, m, 0).getDate();
+        const startOfM = `${monthKey}-01`;
+        const endOfM = `${monthKey}-${String(daysInM).padStart(2, '0')}`;
+        const mealCalc = getMealCalculations(startOfM, endOfM);
+        
+        mealSectionHtml = `
+            <div class="statement-section-title">Daily Mess Meals & Payments Summary</div>
+            <div class="statement-summary-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 15px;">
+                <div class="summary-box">
+                    <span>Meals (Breakfast/Lunch/Dinner)</span>
+                    <strong>${mealCalc.totalBreakfasts}B / ${mealCalc.totalLunches}L / ${mealCalc.totalDinners}D (${mealCalc.totalMealsCount} total)</strong>
+                </div>
+                <div class="summary-box">
+                    <span>Total Meal Bill</span>
+                    <strong style="color: #4f46e5;">${formatCurrency(mealCalc.totalMealBill)}</strong>
+                </div>
+                <div class="summary-box">
+                    <span>Payments & Remaining Due</span>
+                    <strong>Paid: ${formatCurrency(mealCalc.totalPaid)} | Due: ${formatCurrency(mealCalc.remainingDue)}</strong>
+                </div>
+            </div>
+        `;
+    }
+
     const statementEl = document.getElementById('printable-statement');
     if (!statementEl) return;
 
@@ -1968,6 +2624,8 @@ function generateMonthlyPDFReport(selectedMonthKey) {
                 <strong style="color: ${netSavings >= 0 ? '#10b981' : '#ef4444'};">${formatCurrency(netSavings)}</strong>
             </div>
         </div>
+
+        ${mealSectionHtml}
 
         <div class="statement-section-title">Category-wise Expenditure</div>
         <table class="statement-table">
@@ -2101,6 +2759,17 @@ function resetAllData() {
                 paymentMethod: 'UPI',
                 category: 'Food'
             };
+            state.mealSettings = {
+                breakfastRate: 30,
+                lunchRate: 50,
+                dinnerRate: 50
+            };
+            state.mealPeriod = {
+                startDate: '',
+                endDate: ''
+            };
+            state.mealEntries = {};
+            state.mealPayments = [];
             state.settings = {
                 budget: 12000,
                 savingsGoal: 3000,
@@ -2130,6 +2799,9 @@ function openModal(id) {
         setTimeout(() => document.getElementById('expense-amount').focus(), 100);
     } else if(id === 'income-modal') {
         syncQuickDateButtons('income-date');
+    } else if(id === 'meal-payment-modal') {
+        syncMealPayQuickDateButtons();
+        setTimeout(() => document.getElementById('meal-payment-amount')?.focus(), 100);
     } else if(id === 'family-received-modal') {
         const curEl = document.getElementById('fam-received-currency');
         if (curEl) curEl.textContent = state.settings.currency;
@@ -2143,6 +2815,33 @@ function openModal(id) {
         const curEl = document.getElementById('fam-bill-currency');
         if (curEl) curEl.textContent = state.settings.currency;
         setTimeout(() => document.getElementById('fam-bill-amount')?.focus(), 100);
+    }
+}
+
+function syncMealPayQuickDateButtons() {
+    const input = document.getElementById('meal-payment-date');
+    if (!input) return;
+    const val = input.value;
+    const today = getLocalDateString(new Date());
+
+    const yestDate = new Date();
+    yestDate.setDate(yestDate.getDate() - 1);
+    const yesterday = getLocalDateString(yestDate);
+
+    const btnToday = document.getElementById('btn-meal-payment-date-today');
+    const btnYesterday = document.getElementById('btn-meal-payment-date-yesterday');
+
+    if (btnToday && btnYesterday) {
+        if (val === today) {
+            btnToday.classList.add('active');
+            btnYesterday.classList.remove('active');
+        } else if (val === yesterday) {
+            btnToday.classList.remove('active');
+            btnYesterday.classList.add('active');
+        } else {
+            btnToday.classList.remove('active');
+            btnYesterday.classList.remove('active');
+        }
     }
 }
 
