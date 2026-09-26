@@ -1273,49 +1273,87 @@ function openMealPaymentModal(editId = null) {
     openModal('meal-payment-modal');
 }
 
-function saveMealPayment(e) {
-    e.preventDefault();
-    const id = document.getElementById('meal-payment-id').value;
-    const amount = parseFloat(document.getElementById('meal-payment-amount').value);
-    const date = document.getElementById('meal-payment-date').value;
-    const paymentMethod = document.getElementById('meal-payment-method').value;
-    const note = document.getElementById('meal-payment-note').value.trim();
+let isSavingMealPayment = false;
+let lastMealPaymentSubmission = { amount: null, date: null, time: 0 };
 
-    if (!amount || amount <= 0 || !date) {
+function saveMealPayment(e) {
+    if (e) e.preventDefault();
+    if (isSavingMealPayment) return;
+
+    const idInput = document.getElementById('meal-payment-id');
+    const id = idInput ? idInput.value : '';
+    const amountInput = document.getElementById('meal-payment-amount');
+    const amount = amountInput ? parseFloat(amountInput.value) : 0;
+    const dateInput = document.getElementById('meal-payment-date');
+    const date = dateInput ? dateInput.value : '';
+    const paymentMethodInput = document.getElementById('meal-payment-method');
+    const paymentMethod = paymentMethodInput ? paymentMethodInput.value : 'UPI';
+    const noteInput = document.getElementById('meal-payment-note');
+    const note = noteInput ? noteInput.value.trim() : '';
+
+    if (!amount || amount <= 0 || isNaN(amount) || !date) {
         showToast('Please enter a valid payment amount and date', 'warning');
         return;
     }
 
-    if (id) {
-        const idx = state.mealPayments.findIndex(p => p.id === id);
-        if (idx !== -1) {
-            state.mealPayments[idx] = {
-                ...state.mealPayments[idx],
+    const now = Date.now();
+    // Prevent accidental rapid duplicate tap on mobile (< 1.5 seconds with exact same amount and date)
+    if (!id && lastMealPaymentSubmission.amount === amount && lastMealPaymentSubmission.date === date && (now - lastMealPaymentSubmission.time) < 1500) {
+        console.warn('Blocked rapid duplicate meal payment submission attempt');
+        return;
+    }
+
+    isSavingMealPayment = true;
+    const submitBtn = document.getElementById('btn-save-meal-payment');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.6';
+    }
+
+    try {
+        if (id) {
+            const idx = state.mealPayments.findIndex(p => p.id === id);
+            if (idx !== -1) {
+                state.mealPayments[idx] = {
+                    ...state.mealPayments[idx],
+                    amount,
+                    date,
+                    paymentMethod,
+                    note,
+                    updatedAt: new Date().toISOString()
+                };
+                showToast('Meal payment updated successfully');
+            }
+        } else {
+            lastMealPaymentSubmission = { amount, date, time: now };
+            const newPayment = {
+                id: 'mp_' + now + '_' + Math.random().toString(36).substr(2, 5),
                 amount,
                 date,
                 paymentMethod,
                 note,
-                updatedAt: new Date().toISOString()
+                createdAt: new Date().toISOString()
             };
-            showToast('Meal payment updated successfully');
+            state.mealPayments.unshift(newPayment);
+            showToast(`Meal payment of ${formatCurrency(amount)} recorded successfully`);
         }
-    } else {
-        const newPayment = {
-            id: 'mp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-            amount,
-            date,
-            paymentMethod,
-            note,
-            createdAt: new Date().toISOString()
-        };
-        state.mealPayments.unshift(newPayment);
-        showToast(`Meal payment of ${formatCurrency(amount)} recorded successfully`);
-    }
 
-    saveData();
-    closeModal('meal-payment-modal');
-    renderDailyMealsView();
-    renderDailyMealCard();
+        saveData();
+        closeModal('meal-payment-modal');
+        renderDailyMealsView();
+        renderDailyMealCard();
+        if (state.currentView === 'dashboard') {
+            renderDashboard();
+        }
+    } finally {
+        setTimeout(() => {
+            isSavingMealPayment = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+            }
+        }, 600);
+    }
 }
 
 function deleteMealPayment(id) {
@@ -2325,8 +2363,12 @@ function populateCategoryDropdowns() {
 /* ==========================================================================
    CRUD Operations
    ========================================================================== */
+let isSubmittingExpense = false;
+let isSubmittingIncome = false;
+
 function submitExpenseForm(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    if (isSubmittingExpense) return;
     
     const id = document.getElementById('expense-id').value;
     const amount = parseFloat(document.getElementById('expense-amount').value);
@@ -2336,35 +2378,40 @@ function submitExpenseForm(e) {
         return;
     }
 
-    const expense = {
-        id: id ? parseInt(id) : Date.now(),
-        amount: amount,
-        category: document.getElementById('expense-category').value,
-        date: document.getElementById('expense-date').value,
-        paymentMethod: document.getElementById('expense-payment').value,
-        type: document.getElementById('expense-type').value,
-        description: document.getElementById('expense-desc').value
-    };
+    isSubmittingExpense = true;
+    try {
+        const expense = {
+            id: id ? parseInt(id) : Date.now(),
+            amount: amount,
+            category: document.getElementById('expense-category').value,
+            date: document.getElementById('expense-date').value,
+            paymentMethod: document.getElementById('expense-payment').value,
+            type: document.getElementById('expense-type').value,
+            description: document.getElementById('expense-desc').value
+        };
 
-    if (id) {
-        const index = state.expenses.findIndex(e => e.id === expense.id);
-        if (index > -1) state.expenses[index] = expense;
-        showToast('Expense updated successfully');
-    } else {
-        state.expenses.push(expense);
-        showToast('Expense added successfully');
-    }
+        if (id) {
+            const index = state.expenses.findIndex(e => e.id === expense.id);
+            if (index > -1) state.expenses[index] = expense;
+            showToast('Expense updated successfully');
+        } else {
+            state.expenses.push(expense);
+            showToast('Expense added successfully');
+        }
 
-    saveData();
-    closeModal('expense-modal');
-    renderView(state.currentView); // Refresh current view
-    
-    // Real-time Budget Check after adding an expense
-    const calc = getCalculations();
-    if (calc.thisMonthExpense > state.settings.budget) {
-        setTimeout(() => showToast('Alert: You have exceeded your monthly budget!', 'error'), 500);
-    } else if (calc.thisMonthExpense >= state.settings.budget * 0.9) {
-        setTimeout(() => showToast('Warning: You are very close to your budget limit!', 'warning'), 500);
+        saveData();
+        closeModal('expense-modal');
+        renderView(state.currentView); // Refresh current view
+        
+        // Real-time Budget Check after adding an expense
+        const calc = getCalculations();
+        if (calc.thisMonthExpense > state.settings.budget) {
+            setTimeout(() => showToast('Alert: You have exceeded your monthly budget!', 'error'), 500);
+        } else if (calc.thisMonthExpense >= state.settings.budget * 0.9) {
+            setTimeout(() => showToast('Warning: You are very close to your budget limit!', 'warning'), 500);
+        }
+    } finally {
+        setTimeout(() => { isSubmittingExpense = false; }, 500);
     }
 }
 
@@ -2434,24 +2481,30 @@ async function deleteExpense(id) {
 }
 
 function submitIncomeForm(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    if (isSubmittingIncome) return;
     
     const amount = parseFloat(document.getElementById('income-amount').value);
     if (amount <= 0 || isNaN(amount)) return;
 
-    const income = {
-        id: Date.now(),
-        amount: amount,
-        source: document.getElementById('income-source').value,
-        date: document.getElementById('income-date').value,
-        note: document.getElementById('income-desc').value
-    };
+    isSubmittingIncome = true;
+    try {
+        const income = {
+            id: Date.now(),
+            amount: amount,
+            source: document.getElementById('income-source').value,
+            date: document.getElementById('income-date').value,
+            note: document.getElementById('income-desc').value
+        };
 
-    state.income.push(income);
-    saveData();
-    showToast('Income added successfully');
-    closeModal('income-modal');
-    renderView(state.currentView);
+        state.income.push(income);
+        saveData();
+        showToast('Income added successfully');
+        closeModal('income-modal');
+        renderView(state.currentView);
+    } finally {
+        setTimeout(() => { isSubmittingIncome = false; }, 500);
+    }
 }
 
 async function deleteIncome(id) {
@@ -2538,7 +2591,12 @@ function exportExcel() {
 /* ==========================================================================
    Event Listeners Setup
    ========================================================================== */
+let eventListenersInitialized = false;
+
 function setupEventListeners() {
+    if (eventListenersInitialized) return;
+    eventListenersInitialized = true;
+
     // Nav links (Desktop Sidebar & Mobile Bottom Nav)
     document.querySelectorAll('.nav-item').forEach(item => {
         if (!item.classList.contains('nav-menu-trigger')) {
