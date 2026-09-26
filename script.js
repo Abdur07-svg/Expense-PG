@@ -214,285 +214,44 @@ function getGreetingTime() {
 /* ==========================================================================
    Calculations
    ========================================================================== */
-/* ==========================================================================
-   Central Financial Model & Calculations Engine
-   ========================================================================== */
-
-/**
- * getCentralFinancialSummary
- * Single Source of Truth for the entire application financial data model.
- * Model:
- * MONEY RECEIVED (Father + Other Income)
- * ↓
- * TOTAL SPENT / PAID (Pillar 1: Mess Payments + Pillar 2: Room Rent + Pillar 3: Current Bill + Pillar 4: Daily Expenses)
- * ↓
- * AVAILABLE MONEY = MONEY RECEIVED - TOTAL SPENT / PAID
- * ↓
- * PENDING DUES (Mess Due + Rent Due + Current Bill Due) [Liabilities, not subtracted from cash until paid]
- */
-function getCentralFinancialSummary(targetMonthKey = null) {
-    const now = new Date();
-    const monthKey = targetMonthKey || getMonthKey(now);
-    const isAllTime = targetMonthKey === 'all';
-    
-    // 1. MONEY RECEIVED (Father Transfers + Other Income)
-    let receivedFather = 0;
-    let receivedOther = 0;
-    let allTimeReceivedFather = 0;
-    let allTimeReceivedOther = 0;
-
-    if (familyData.received && Array.isArray(familyData.received)) {
-        familyData.received.forEach(rec => {
-            const amt = Number(rec.amount || 0);
-            allTimeReceivedFather += amt;
-            if (isAllTime || (rec.date && rec.date.startsWith(monthKey))) {
-                receivedFather += amt;
-            }
-        });
-    }
-
-    if (state.income && Array.isArray(state.income)) {
-        state.income.forEach(inc => {
-            const amt = Number(inc.amount || 0);
-            allTimeReceivedOther += amt;
-            if (isAllTime || (inc.date && inc.date.startsWith(monthKey))) {
-                receivedOther += amt;
-            }
-        });
-    }
-
-    const totalReceived = receivedFather + receivedOther;
-    const allTimeReceived = allTimeReceivedFather + allTimeReceivedOther;
-
-    // 2. THE 4 CORE SPENDING PILLARS (Actual Cash Outflows)
-    
-    // Pillar 1: Mess Payments (Actual Cash Paid to Mess)
-    let totalMessPaid = 0;
-    let allTimeMessPaid = 0;
-    let messPaymentsCount = 0;
-    if (state.mealPayments && Array.isArray(state.mealPayments)) {
-        state.mealPayments.forEach(p => {
-            const amt = Number(p.amount || 0);
-            allTimeMessPaid += amt;
-            if (isAllTime || (p.date && p.date.startsWith(monthKey))) {
-                totalMessPaid += amt;
-                messPaymentsCount++;
-            }
-        });
-    }
-
-    // Pillar 2: Room Rent Payments Paid
-    let totalRentPaid = 0;
-    let allTimeRentPaid = 0;
-    let rentPaymentsCount = 0;
-    let latestRentAmount = 0;
-    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
-        familyData.roomRent.forEach(r => {
-            const amt = Number(r.amount || 0);
-            allTimeRentPaid += amt;
-            if (amt > 0) latestRentAmount = amt;
-            const rMonth = r.month || (r.date ? r.date.substring(0, 7) : '');
-            if (isAllTime || rMonth === monthKey || (r.date && r.date.startsWith(monthKey))) {
-                totalRentPaid += amt;
-                rentPaymentsCount++;
-            }
-        });
-    }
-
-    // Pillar 3: Current / Electricity Bill Paid
-    let totalBillPaid = 0;
-    let allTimeBillPaid = 0;
-    let billPaymentsCount = 0;
-    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
-        familyData.currentBill.forEach(b => {
-            const amt = Number(b.amount || 0);
-            allTimeBillPaid += amt;
-            const bMonth = b.month || (b.date ? b.date.substring(0, 7) : '');
-            if (isAllTime || bMonth === monthKey || (b.date && b.date.startsWith(monthKey))) {
-                totalBillPaid += amt;
-                billPaymentsCount++;
-            }
-        });
-    }
-
-    // Pillar 4: Daily Regular Expenses (Exclude legacy synthetic daily meals to prevent duplicate counting)
-    let totalDailyExpense = 0;
-    let allTimeDailyExpense = 0;
-    let dailyExpenseCount = 0;
-    const categoryTotals = {};
-    const paymentMethodTotals = {};
-
-    if (state.expenses && Array.isArray(state.expenses)) {
-        state.expenses.forEach(e => {
-            if (e.isDailyMeal) return; // Skip legacy synthetic items, mess payments are tracked in Pillar 1
-            const amt = Number(e.amount || 0);
-            allTimeDailyExpense += amt;
-            if (isAllTime || (e.date && e.date.startsWith(monthKey))) {
-                totalDailyExpense += amt;
-                dailyExpenseCount++;
-                const cat = e.category || 'Other';
-                categoryTotals[cat] = (categoryTotals[cat] || 0) + amt;
-                const method = e.paymentMethod || 'UPI';
-                paymentMethodTotals[method] = (paymentMethodTotals[method] || 0) + amt;
-            }
-        });
-    }
-
-    // Aggregate spending categories including the 4 pillars
-    if (totalMessPaid > 0) {
-        categoryTotals['Mess'] = (categoryTotals['Mess'] || 0) + totalMessPaid;
-        paymentMethodTotals['UPI'] = (paymentMethodTotals['UPI'] || 0) + totalMessPaid;
-    }
-    if (totalRentPaid > 0) {
-        categoryTotals['PG Rent'] = (categoryTotals['PG Rent'] || 0) + totalRentPaid;
-    }
-    if (totalBillPaid > 0) {
-        categoryTotals['Electricity'] = (categoryTotals['Electricity'] || 0) + totalBillPaid;
-    }
-
-    // 3. TOTAL SPENT / PAID
-    const totalSpent = totalMessPaid + totalRentPaid + totalBillPaid + totalDailyExpense;
-    const allTimeSpent = allTimeMessPaid + allTimeRentPaid + allTimeBillPaid + allTimeDailyExpense;
-
-    // 4. AVAILABLE MONEY (Cash in Hand / Bank)
-    const availableMoney = totalReceived - totalSpent;
-    const allTimeAvailable = allTimeReceived - allTimeSpent;
-
-    // 5. PENDING LIABILITIES & DUES (Calculated separately, NEVER deducted from available cash until paid)
-    
-    // A. Mess Due: Calculated Bill - Mess Payments
-    let totalMealBill = 0;
-    let totalMealsCount = 0;
-    const defaultB = Number(state.mealSettings?.breakfastRate) || 30;
-    const defaultL = Number(state.mealSettings?.lunchRate) || 50;
-    const defaultD = Number(state.mealSettings?.dinnerRate) || 50;
-
-    if (state.mealEntries) {
-        Object.entries(state.mealEntries).forEach(([dateStr, entry]) => {
-            if (!entry) return;
-            if (isAllTime || dateStr.startsWith(monthKey)) {
-                const bRate = entry.breakfastRate !== undefined ? Number(entry.breakfastRate) : defaultB;
-                const lRate = entry.lunchRate !== undefined ? Number(entry.lunchRate) : defaultL;
-                const dRate = entry.dinnerRate !== undefined ? Number(entry.dinnerRate) : defaultD;
-
-                let count = 0;
-                let cost = 0;
-                if (entry.breakfast) { count++; cost += bRate; }
-                if (entry.lunch) { count++; cost += lRate; }
-                if (entry.dinner) { count++; cost += dRate; }
-
-                totalMealsCount += count;
-                totalMealBill += (entry.cost !== undefined ? Number(entry.cost) : cost);
-            }
-        });
-    }
-
-    const messDue = Math.max(0, totalMealBill - totalMessPaid);
-    const messAdvance = Math.max(0, totalMessPaid - totalMealBill);
-
-    // B. Room Rent Due: If no rent paid for month and standard rent is expected, or difference
-    const expectedRent = latestRentAmount || 3000;
-    let rentDue = 0;
-    if (!isAllTime) {
-        rentDue = Math.max(0, expectedRent - totalRentPaid);
-    }
-
-    // C. Current Bill Due: Expected or unpaid current bill
-    const currentBillDue = 0; // Default 0 when all recorded bills are paid
-
-    const totalPendingDue = messDue + rentDue + currentBillDue;
-
-    // 6. PILLAR PROPORTIONS & PERCENTAGES FOR "WHERE DID MY MONEY GO?"
-    const messPct = totalSpent > 0 ? Math.round((totalMessPaid / totalSpent) * 100) : 0;
-    const rentPct = totalSpent > 0 ? Math.round((totalRentPaid / totalSpent) * 100) : 0;
-    const billPct = totalSpent > 0 ? Math.round((totalBillPaid / totalSpent) * 100) : 0;
-    const dailyPct = totalSpent > 0 ? Math.max(0, 100 - messPct - rentPct - billPct) : 0;
-
-    return {
-        monthKey,
-        isAllTime,
-        // Income / Received
-        receivedFather,
-        receivedOther,
-        totalReceived,
-        allTimeReceived,
-        // Spending Pillars
-        totalMessPaid,
-        totalRentPaid,
-        totalBillPaid,
-        totalDailyExpense,
-        // Counts
-        messPaymentsCount,
-        rentPaymentsCount,
-        billPaymentsCount,
-        dailyExpenseCount,
-        // Grand Totals
-        totalSpent,
-        allTimeSpent,
-        availableMoney,
-        allTimeAvailable,
-        // Liabilities / Dues
-        totalMealBill,
-        totalMealsCount,
-        messDue,
-        messAdvance,
-        rentDue,
-        currentBillDue,
-        totalPendingDue,
-        // Distributions
-        messPct,
-        rentPct,
-        billPct,
-        dailyPct,
-        categoryTotals,
-        paymentMethodTotals
-    };
-}
-
-/* ==========================================================================
-   Calculations Adapter
-   ========================================================================== */
 function getCalculations(targetDate = new Date()) {
     const currentMonthKey = getMonthKey(targetDate);
     const prevMonthDate = new Date(targetDate.getFullYear(), targetDate.getMonth() - 1, 1);
     const prevMonthKey = getMonthKey(prevMonthDate);
     const todayStr = targetDate.toISOString().split('T')[0];
 
-    const currentSummary = getCentralFinancialSummary(currentMonthKey);
-    const prevSummary = getCentralFinancialSummary(prevMonthKey);
-
-    // Calculate today's spending across all 4 pillars
     let todayExpense = 0;
-    if (state.expenses && Array.isArray(state.expenses)) {
-        state.expenses.forEach(exp => {
-            if (!exp.isDailyMeal && exp.date === todayStr) {
-                todayExpense += Number(exp.amount || 0);
-            }
-        });
-    }
-    if (state.mealPayments && Array.isArray(state.mealPayments)) {
-        state.mealPayments.forEach(p => {
-            if (p.date === todayStr) todayExpense += Number(p.amount || 0);
-        });
-    }
-    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
-        familyData.roomRent.forEach(r => {
-            if (r.date === todayStr) todayExpense += Number(r.amount || 0);
-        });
-    }
-    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
-        familyData.currentBill.forEach(b => {
-            if (b.date === todayStr) todayExpense += Number(b.amount || 0);
-        });
-    }
+    let thisMonthExpense = 0;
+    let prevMonthExpense = 0;
+    let categoryTotals = {};
+    let categoryTotalsPrev = {};
+
+    state.expenses.forEach(exp => {
+        const expMonth = exp.date.substring(0, 7);
+        if (exp.date === todayStr) {
+            todayExpense += exp.amount;
+        }
+        if (expMonth === currentMonthKey) {
+            thisMonthExpense += exp.amount;
+            categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + exp.amount;
+        }
+        if (expMonth === prevMonthKey) {
+            prevMonthExpense += exp.amount;
+            categoryTotalsPrev[exp.category] = (categoryTotalsPrev[exp.category] || 0) + exp.amount;
+        }
+    });
+
+    // Income
+    let thisMonthIncome = 0;
+    state.income.forEach(inc => {
+        if (inc.date.substring(0, 7) === currentMonthKey) {
+            thisMonthIncome += inc.amount;
+        }
+    });
 
     const daysInMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
     const daysPassed = targetDate.getDate();
     const remainingDays = daysInMonth - daysPassed + 1; // +1 to include today
-
-    const thisMonthExpense = currentSummary.totalSpent;
-    const prevMonthExpense = prevSummary.totalSpent;
-    const thisMonthIncome = currentSummary.totalReceived;
 
     const avgDaily = daysPassed > 0 ? (thisMonthExpense / daysPassed) : 0;
     const remainingBudget = state.settings.budget - thisMonthExpense;
@@ -503,8 +262,8 @@ function getCalculations(targetDate = new Date()) {
         todayExpense,
         thisMonthExpense,
         prevMonthExpense,
-        categoryTotals: currentSummary.categoryTotals,
-        categoryTotalsPrev: prevSummary.categoryTotals,
+        categoryTotals,
+        categoryTotalsPrev,
         thisMonthIncome,
         avgDaily,
         remainingBudget,
@@ -512,9 +271,108 @@ function getCalculations(targetDate = new Date()) {
         dailyLimit,
         daysInMonth,
         daysPassed,
-        remainingDays,
-        // Central Summary Reference
-        central: currentSummary
+        remainingDays
+    };
+}
+
+function getFinancialSummary(monthKey = null) {
+    if (!monthKey) {
+        monthKey = getMonthKey(new Date());
+    }
+
+    // 1. Money Received
+    // Self income from state.income
+    let selfIncome = 0;
+    state.income.forEach(inc => {
+        if (inc.date && inc.date.startsWith(monthKey)) {
+            selfIncome += Number(inc.amount || 0);
+        }
+    });
+
+    // Family transfer received from father (familyData.received)
+    let familyReceived = 0;
+    if (familyData && Array.isArray(familyData.received)) {
+        familyData.received.forEach(rec => {
+            if (rec.date && rec.date.startsWith(monthKey)) {
+                familyReceived += Number(rec.amount || 0);
+            }
+        });
+    }
+
+    const totalReceived = selfIncome + familyReceived;
+
+    // 2. Money Actually Spent / Paid
+    // Room Rent paid (familyData.roomRent)
+    let roomRentPaid = 0;
+    if (familyData && Array.isArray(familyData.roomRent)) {
+        familyData.roomRent.forEach(rent => {
+            if (rent.month === monthKey || (!rent.month && rent.date && rent.date.startsWith(monthKey))) {
+                roomRentPaid += Number(rent.amount || 0);
+            }
+        });
+    }
+
+    // Electricity Bill paid (familyData.currentBill)
+    let currentBillPaid = 0;
+    if (familyData && Array.isArray(familyData.currentBill)) {
+        familyData.currentBill.forEach(bill => {
+            if (bill.month === monthKey || (!bill.month && bill.date && bill.date.startsWith(monthKey))) {
+                currentBillPaid += Number(bill.amount || 0);
+            }
+        });
+    }
+
+    // Mess / Meal Payments actually paid (state.mealPayments)
+    let messPaid = 0;
+    if (state.mealPayments && Array.isArray(state.mealPayments)) {
+        state.mealPayments.forEach(pay => {
+            if (pay.date && pay.date.startsWith(monthKey)) {
+                messPaid += Number(pay.amount || 0);
+            }
+        });
+    }
+
+    // Daily & regular expenses (state.expenses)
+    let dailyExpenses = 0;
+    state.expenses.forEach(exp => {
+        if (exp.date && exp.date.startsWith(monthKey)) {
+            dailyExpenses += Number(exp.amount || 0);
+        }
+    });
+
+    const totalSpent = roomRentPaid + currentBillPaid + messPaid + dailyExpenses;
+
+    // 3. Money Left (Available Money)
+    const availableMoney = totalReceived - totalSpent;
+
+    // 4. Pending Due (Unpaid Liabilities)
+    const mealCalc = getMealCalculations();
+    const mealDue = mealCalc.remainingDue || 0;
+    const totalDue = mealDue;
+
+    // 5. Percentages for "Where Did My Money Go?"
+    const rentPct = totalSpent > 0 ? (roomRentPaid / totalSpent) * 100 : 0;
+    const messPct = totalSpent > 0 ? (messPaid / totalSpent) * 100 : 0;
+    const billPct = totalSpent > 0 ? (currentBillPaid / totalSpent) * 100 : 0;
+    const dailyPct = totalSpent > 0 ? (dailyExpenses / totalSpent) * 100 : 0;
+
+    return {
+        monthKey,
+        selfIncome,
+        familyReceived,
+        totalReceived,
+        roomRentPaid,
+        currentBillPaid,
+        messPaid,
+        dailyExpenses,
+        totalSpent,
+        availableMoney,
+        mealDue,
+        totalDue,
+        rentPct,
+        messPct,
+        billPct,
+        dailyPct
     };
 }
 
@@ -565,323 +423,67 @@ function renderView(viewName) {
    UI Rendering - Dashboard
    ========================================================================== */
 function renderDashboard() {
-    const now = new Date();
-    document.getElementById('dashboard-date').textContent = formatDate(now.toISOString());
+    document.getElementById('dashboard-date').textContent = formatDate(new Date().toISOString());
     document.getElementById('greeting-text').textContent = getGreetingTime();
     document.getElementById('user-name-display').textContent = state.settings.userName;
     
-    const currentMonthKey = getMonthKey(now);
-    const summary = getCentralFinancialSummary(currentMonthKey);
-    const calc = getCalculations(now);
+    const calc = getCalculations();
+    const finance = getFinancialSummary();
 
-    // ==========================================
-    // 1. CENTRAL MONEY FLOW SUMMARY (TOP 4 KPIS)
-    // ==========================================
-    const totalReceivedEl = document.getElementById('dash-total-received');
-    if (totalReceivedEl) totalReceivedEl.textContent = formatCurrency(summary.totalReceived);
+    // 1. Mobile-First Financial Flow Hero (4 Pillars)
+    const elReceived = document.getElementById('dash-money-received');
+    if (elReceived) elReceived.textContent = formatCurrency(finance.totalReceived);
 
-    const totalSpentEl = document.getElementById('dash-total-spent');
-    if (totalSpentEl) totalSpentEl.textContent = formatCurrency(summary.totalSpent);
+    const elAvailable = document.getElementById('dash-money-available');
+    if (elAvailable) elAvailable.textContent = formatCurrency(finance.availableMoney);
 
-    const availableMoneyEl = document.getElementById('dash-available-money');
-    if (availableMoneyEl) {
-        availableMoneyEl.textContent = formatCurrency(summary.availableMoney);
-    }
+    const elSpent = document.getElementById('dash-money-spent');
+    if (elSpent) elSpent.textContent = formatCurrency(finance.totalSpent);
 
-    const availableCard = document.getElementById('dash-available-card');
-    if (availableCard) {
-        availableCard.classList.remove('positive', 'negative');
-        if (summary.availableMoney > 0) availableCard.classList.add('positive');
-        else if (summary.availableMoney < 0) availableCard.classList.add('negative');
-    }
+    const elDue = document.getElementById('dash-money-due');
+    if (elDue) elDue.textContent = formatCurrency(finance.totalDue);
 
-    const totalDuesEl = document.getElementById('dash-total-dues');
-    if (totalDuesEl) totalDuesEl.textContent = formatCurrency(summary.totalPendingDue);
+    // 2. "Where Did My Money Go?" Breakdown
+    const elWhereTotal = document.getElementById('dash-where-total-pill');
+    if (elWhereTotal) elWhereTotal.textContent = `Total: ${formatCurrency(finance.totalSpent)}`;
 
-    // ==========================================
-    // 2. "WHERE DID MY MONEY GO?" 4 PILLARS
-    // ==========================================
-    const destPeriod = document.getElementById('dash-dest-period-label');
-    if (destPeriod) {
-        destPeriod.textContent = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    }
+    const elRentSpent = document.getElementById('dash-spent-rent');
+    if (elRentSpent) elRentSpent.textContent = formatCurrency(finance.roomRentPaid);
+    const elRentPct = document.getElementById('dash-pct-rent');
+    if (elRentPct) elRentPct.textContent = `${finance.rentPct.toFixed(0)}%`;
+    const elRentBar = document.getElementById('dash-bar-rent');
+    if (elRentBar) elRentBar.style.width = `${finance.rentPct}%`;
 
-    // Amounts
-    const destMess = document.getElementById('dash-dest-mess');
-    const destRent = document.getElementById('dash-dest-rent');
-    const destBill = document.getElementById('dash-dest-bill');
-    const destDaily = document.getElementById('dash-dest-daily');
+    const elMessSpent = document.getElementById('dash-spent-mess');
+    if (elMessSpent) elMessSpent.textContent = formatCurrency(finance.messPaid);
+    const elMessPct = document.getElementById('dash-pct-mess');
+    if (elMessPct) elMessPct.textContent = `${finance.messPct.toFixed(0)}%`;
+    const elMessBar = document.getElementById('dash-bar-mess');
+    if (elMessBar) elMessBar.style.width = `${finance.messPct}%`;
 
-    if (destMess) destMess.textContent = formatCurrency(summary.totalMessPaid);
-    if (destRent) destRent.textContent = formatCurrency(summary.totalRentPaid);
-    if (destBill) destBill.textContent = formatCurrency(summary.totalBillPaid);
-    if (destDaily) destDaily.textContent = formatCurrency(summary.totalDailyExpense);
+    const elBillSpent = document.getElementById('dash-spent-bill');
+    if (elBillSpent) elBillSpent.textContent = formatCurrency(finance.currentBillPaid);
+    const elBillPct = document.getElementById('dash-pct-bill');
+    if (elBillPct) elBillPct.textContent = `${finance.billPct.toFixed(0)}%`;
+    const elBillBar = document.getElementById('dash-bar-bill');
+    if (elBillBar) elBillBar.style.width = `${finance.billPct}%`;
 
-    // Percentages
-    const destMessPct = document.getElementById('dash-dest-mess-pct');
-    const destRentPct = document.getElementById('dash-dest-rent-pct');
-    const destBillPct = document.getElementById('dash-dest-bill-pct');
-    const destDailyPct = document.getElementById('dash-dest-daily-pct');
+    const elDailySpent = document.getElementById('dash-spent-daily');
+    if (elDailySpent) elDailySpent.textContent = formatCurrency(finance.dailyExpenses);
+    const elDailyPct = document.getElementById('dash-pct-daily');
+    if (elDailyPct) elDailyPct.textContent = `${finance.dailyPct.toFixed(0)}%`;
+    const elDailyBar = document.getElementById('dash-bar-daily');
+    if (elDailyBar) elDailyBar.style.width = `${finance.dailyPct}%`;
 
-    if (destMessPct) destMessPct.textContent = `${summary.messPct}%`;
-    if (destRentPct) destRentPct.textContent = `${summary.rentPct}%`;
-    if (destBillPct) destBillPct.textContent = `${summary.billPct}%`;
-    if (destDailyPct) destDailyPct.textContent = `${summary.dailyPct}%`;
+    // 3. Money Flow Summary Strip
+    const elFlowRec = document.getElementById('dash-flow-received');
+    if (elFlowRec) elFlowRec.textContent = formatCurrency(finance.totalReceived);
+    const elFlowSpent = document.getElementById('dash-flow-spent');
+    if (elFlowSpent) elFlowSpent.textContent = formatCurrency(finance.totalSpent);
+    const elFlowAvail = document.getElementById('dash-flow-available');
+    if (elFlowAvail) elFlowAvail.textContent = formatCurrency(finance.availableMoney);
 
-    // Hero Status Badge
-    const heroStatus = document.getElementById('dash-hero-status');
-    if (heroStatus) {
-        if (summary.availableMoney > 0) {
-            heroStatus.innerHTML = '<i class="ph ph-check-circle"></i> Ready to spend';
-            heroStatus.style.background = 'rgba(16, 185, 129, 0.12)';
-            heroStatus.style.color = 'var(--success)';
-            heroStatus.style.borderColor = 'rgba(16, 185, 129, 0.25)';
-        } else if (summary.availableMoney === 0) {
-            heroStatus.innerHTML = '<i class="ph ph-info"></i> Balance is zero';
-            heroStatus.style.background = 'rgba(100, 116, 139, 0.12)';
-            heroStatus.style.color = 'var(--text-secondary)';
-            heroStatus.style.borderColor = 'rgba(100, 116, 139, 0.25)';
-        } else {
-            heroStatus.innerHTML = '<i class="ph ph-warning-circle"></i> Deficit / Overspent';
-            heroStatus.style.background = 'rgba(239, 68, 68, 0.12)';
-            heroStatus.style.color = 'var(--danger)';
-            heroStatus.style.borderColor = 'rgba(239, 68, 68, 0.25)';
-        }
-    }
-
-    // Segmented Progress Bar (Row bars)
-    const barMess = document.getElementById('dash-bar-mess');
-    const barRent = document.getElementById('dash-bar-rent');
-    const barBill = document.getElementById('dash-bar-bill');
-    const barDaily = document.getElementById('dash-bar-daily');
-
-    if (summary.totalSpent > 0) {
-        if (barMess) barMess.style.width = `${summary.messPct}%`;
-        if (barRent) barRent.style.width = `${summary.rentPct}%`;
-        if (barBill) barBill.style.width = `${summary.billPct}%`;
-        if (barDaily) barDaily.style.width = `${summary.dailyPct}%`;
-    } else {
-        if (barMess) barMess.style.width = '25%';
-        if (barRent) barRent.style.width = '25%';
-        if (barBill) barBill.style.width = '25%';
-        if (barDaily) barDaily.style.width = '25%';
-    }
-
-    // Segmented Progress Bar (Full Bar)
-    const barFullMess = document.getElementById('dash-bar-full-mess');
-    const barFullRent = document.getElementById('dash-bar-full-rent');
-    const barFullBill = document.getElementById('dash-bar-full-bill');
-    const barFullDaily = document.getElementById('dash-bar-full-daily');
-
-    if (summary.totalSpent > 0) {
-        if (barFullMess) barFullMess.style.width = `${summary.messPct}%`;
-        if (barFullRent) barFullRent.style.width = `${summary.rentPct}%`;
-        if (barFullBill) barFullBill.style.width = `${summary.billPct}%`;
-        if (barFullDaily) barFullDaily.style.width = `${summary.dailyPct}%`;
-    } else {
-        if (barFullMess) barFullMess.style.width = '25%';
-        if (barFullRent) barFullRent.style.width = '25%';
-        if (barFullBill) barFullBill.style.width = '25%';
-        if (barFullDaily) barFullDaily.style.width = '25%';
-    }
-
-    // Footer stats
-    const destTotalSpent = document.getElementById('dash-dest-total-spent');
-    const destAvailable = document.getElementById('dash-dest-available');
-    if (destTotalSpent) destTotalSpent.textContent = formatCurrency(summary.totalSpent);
-    if (destAvailable) {
-        destAvailable.textContent = formatCurrency(summary.availableMoney);
-        destAvailable.style.color = summary.availableMoney >= 0 ? 'var(--success)' : 'var(--danger)';
-    }
-
-    // ==========================================
-    // 3. PENDING LIABILITIES & DUES PANEL
-    // ==========================================
-    const dueMessVal = document.getElementById('dash-due-mess-val');
-    const dueRentVal = document.getElementById('dash-due-rent-val');
-    const dueBillVal = document.getElementById('dash-due-bill-val');
-    const duesTotalBadge = document.getElementById('dash-dues-total-badge');
-
-    if (dueMessVal) dueMessVal.textContent = formatCurrency(summary.messDue);
-    if (dueRentVal) dueRentVal.textContent = formatCurrency(summary.rentDue);
-    if (dueBillVal) dueBillVal.textContent = formatCurrency(summary.currentBillDue);
-    if (duesTotalBadge) duesTotalBadge.textContent = `Total Due: ${formatCurrency(summary.totalPendingDue)}`;
-
-    // ==========================================
-    // 4. RECENT TRANSACTIONS (Clean Mobile List)
-    // ==========================================
-    const recentTxnsContainer = document.getElementById('dash-recent-txns-list');
-    if (recentTxnsContainer) {
-        const allTxns = [];
-        
-        // 1. Regular Expenses
-        if (state.expenses && Array.isArray(state.expenses)) {
-            state.expenses.forEach(e => {
-                if (e.isDailyMeal) return;
-                allTxns.push({
-                    id: e.id,
-                    title: e.title || e.category || 'Expense',
-                    category: e.category || 'Other',
-                    pillar: 'daily',
-                    amount: Number(e.amount || 0),
-                    type: 'expense',
-                    date: e.date || '',
-                    time: e.time || (e.createdAt ? getLocalTimeString(new Date(e.createdAt)) : ''),
-                    paymentMethod: e.paymentMethod || 'UPI',
-                    note: e.note || '',
-                    icon: getIconForCategory(e.category || 'Other'),
-                    onClick: "renderView('expenses')"
-                });
-            });
-        }
-
-        // 2. Mess Payments
-        if (state.mealPayments && Array.isArray(state.mealPayments)) {
-            state.mealPayments.forEach(p => {
-                allTxns.push({
-                    id: p.id,
-                    title: 'Mess Payment',
-                    category: 'Mess',
-                    pillar: 'mess',
-                    amount: Number(p.amount || 0),
-                    type: 'expense',
-                    date: p.date || '',
-                    time: p.time || (p.createdAt ? getLocalTimeString(new Date(p.createdAt)) : ''),
-                    paymentMethod: p.paymentMethod || 'UPI',
-                    note: p.note || '',
-                    icon: 'ph-cooking-pot',
-                    onClick: "renderView('daily-meals')"
-                });
-            });
-        }
-
-        // 3. Room Rent
-        if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
-            familyData.roomRent.forEach(r => {
-                allTxns.push({
-                    id: r.id,
-                    title: 'Room Rent',
-                    category: 'PG Rent',
-                    pillar: 'rent',
-                    amount: Number(r.amount || 0),
-                    type: 'expense',
-                    date: r.date || '',
-                    time: r.time || (r.createdAt ? getLocalTimeString(new Date(r.createdAt)) : ''),
-                    paymentMethod: r.paymentMethod || 'UPI',
-                    note: r.note || (r.month ? `For ${formatMonthName(r.month)}` : ''),
-                    icon: 'ph-house',
-                    onClick: `openFamilyDetailsModal('rent', '${r.id}')`
-                });
-            });
-        }
-
-        // 4. Current Bill
-        if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
-            familyData.currentBill.forEach(b => {
-                allTxns.push({
-                    id: b.id,
-                    title: 'Current Bill',
-                    category: 'Electricity',
-                    pillar: 'bill',
-                    amount: Number(b.amount || 0),
-                    type: 'expense',
-                    date: b.date || '',
-                    time: b.time || (b.createdAt ? getLocalTimeString(new Date(b.createdAt)) : ''),
-                    paymentMethod: b.paymentMethod || 'UPI',
-                    note: b.note || (b.month ? `For ${formatMonthName(b.month)}` : ''),
-                    icon: 'ph-lightning',
-                    onClick: `openFamilyDetailsModal('bill', '${b.id}')`
-                });
-            });
-        }
-
-        // 5. Family Received
-        if (familyData.received && Array.isArray(familyData.received)) {
-            familyData.received.forEach(rec => {
-                allTxns.push({
-                    id: rec.id,
-                    title: 'Father Transfer',
-                    category: 'Income',
-                    pillar: 'income',
-                    amount: Number(rec.amount || 0),
-                    type: 'income',
-                    date: rec.date || '',
-                    time: rec.time || (rec.createdAt ? getLocalTimeString(new Date(rec.createdAt)) : ''),
-                    paymentMethod: rec.paymentMethod || 'UPI',
-                    note: rec.note || '',
-                    icon: 'ph-arrow-down-left',
-                    onClick: `openFamilyDetailsModal('received', '${rec.id}')`
-                });
-            });
-        }
-
-        // 6. Other Income
-        if (state.income && Array.isArray(state.income)) {
-            state.income.forEach(inc => {
-                allTxns.push({
-                    id: inc.id,
-                    title: inc.source || 'Other Income',
-                    category: inc.source || 'Income',
-                    pillar: 'income',
-                    amount: Number(inc.amount || 0),
-                    type: 'income',
-                    date: inc.date || '',
-                    time: inc.time || (inc.createdAt ? getLocalTimeString(new Date(inc.createdAt)) : ''),
-                    paymentMethod: inc.paymentMethod || 'UPI',
-                    note: inc.note || '',
-                    icon: 'ph-money',
-                    onClick: "renderView('income')"
-                });
-            });
-        }
-
-        // Sort descending by date
-        allTxns.sort((a, b) => {
-            const dateA = a.date || '1970-01-01';
-            const dateB = b.date || '1970-01-01';
-            if (dateA !== dateB) return dateB.localeCompare(dateA);
-            return (b.id || '').localeCompare(a.id || '');
-        });
-
-        const topTxns = allTxns.slice(0, 5);
-        if (topTxns.length === 0) {
-            recentTxnsContainer.innerHTML = `
-                <div class="empty-state-card" style="padding: 1.5rem; text-align: center; color: var(--text-secondary);">
-                    <i class="ph ph-receipt" style="font-size: 2rem; margin-bottom: 0.5rem; display: block; opacity: 0.5;"></i>
-                    <p>No transactions recorded yet.</p>
-                </div>
-            `;
-        } else {
-            recentTxnsContainer.innerHTML = topTxns.map(t => {
-                const isIncome = t.type === 'income';
-                const sign = isIncome ? '+' : '-';
-                const amtClass = isIncome ? 'txn-amt-positive' : 'txn-amt-negative';
-                const timeStr = t.time ? ` • ${formatTime(t.time)}` : '';
-                const dateFormatted = t.date ? formatDate(t.date) : 'Today';
-                return `
-                    <div class="recent-txn-item txn-pillar-${t.pillar}" onclick="${t.onClick}" title="Click to view details">
-                        <div class="txn-item-left">
-                            <div class="txn-icon-badge badge-${t.pillar}">
-                                <i class="ph ${t.icon}"></i>
-                            </div>
-                            <div class="txn-item-info">
-                                <span class="txn-item-title">${escapeHtml(t.title)}</span>
-                                <span class="txn-item-meta">${dateFormatted}${timeStr} <span class="txn-method-tag">${escapeHtml(t.paymentMethod)}</span></span>
-                            </div>
-                        </div>
-                        <div class="txn-item-right">
-                            <span class="txn-item-amount ${amtClass}">${sign}${formatCurrency(t.amount)}</span>
-                            <span class="txn-item-cat cat-tag-${t.pillar}">${escapeHtml(t.category)}</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-    }
-
-    // ==========================================
-    // 5. BUDGET & TODAY SUMMARY CARDS
-    // ==========================================
+    // Summary Cards
     document.getElementById('dash-today').textContent = formatCurrency(calc.todayExpense);
     document.getElementById('dash-month').textContent = formatCurrency(calc.thisMonthExpense);
     document.getElementById('dash-remaining').textContent = formatCurrency(calc.remainingBudget);
@@ -1916,43 +1518,11 @@ function updateMonthSelector() {
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     months.add(currentMonthKey);
     
-    // 1. From expenses
-    if (state.expenses && Array.isArray(state.expenses)) {
-        state.expenses.forEach(e => {
-            if (e.date && e.date.length >= 7) months.add(e.date.substring(0, 7));
-        });
-    }
-
-    // 2. From mealPayments
-    if (state.mealPayments && Array.isArray(state.mealPayments)) {
-        state.mealPayments.forEach(p => {
-            if (p.date && p.date.length >= 7) months.add(p.date.substring(0, 7));
-        });
-    }
-
-    // 3. From familyData
-    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
-        familyData.roomRent.forEach(r => {
-            if (r.month) months.add(r.month);
-            else if (r.date && r.date.length >= 7) months.add(r.date.substring(0, 7));
-        });
-    }
-    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
-        familyData.currentBill.forEach(b => {
-            if (b.month) months.add(b.month);
-            else if (b.date && b.date.length >= 7) months.add(b.date.substring(0, 7));
-        });
-    }
-    if (familyData.received && Array.isArray(familyData.received)) {
-        familyData.received.forEach(r => {
-            if (r.date && r.date.length >= 7) months.add(r.date.substring(0, 7));
-        });
-    }
-    if (state.income && Array.isArray(state.income)) {
-        state.income.forEach(inc => {
-            if (inc.date && inc.date.length >= 7) months.add(inc.date.substring(0, 7));
-        });
-    }
+    state.expenses.forEach(e => {
+        if (e.date && e.date.length >= 7) {
+            months.add(e.date.substring(0, 7));
+        }
+    });
 
     const sortedMonths = Array.from(months).sort().reverse();
     const currentOptions = Array.from(selector.options).map(o => o.value);
@@ -2001,86 +1571,22 @@ function renderAnalysis() {
     let dailyData = {};
     let weekData = [0, 0, 0, 0, 0];
 
-    // 1. Regular Expenses
-    if (state.expenses && Array.isArray(state.expenses)) {
-        state.expenses.forEach(exp => {
-            if (exp.isDailyMeal) return; // Skip legacy synthetic items
-            if (exp.date && exp.date.startsWith(currentMonthKey)) {
-                const amt = Number(exp.amount) || 0;
-                totalExpense += amt;
-                count++;
-                
-                categoryData[exp.category] = (categoryData[exp.category] || 0) + amt;
-                paymentData[exp.paymentMethod || 'UPI'] = (paymentData[exp.paymentMethod || 'UPI'] || 0) + amt;
-                dailyData[exp.date] = (dailyData[exp.date] || 0) + amt;
+    state.expenses.forEach(exp => {
+        if (exp.date && exp.date.startsWith(currentMonthKey)) {
+            const amt = Number(exp.amount) || 0;
+            totalExpense += amt;
+            count++;
+            
+            categoryData[exp.category] = (categoryData[exp.category] || 0) + amt;
+            paymentData[exp.paymentMethod] = (paymentData[exp.paymentMethod] || 0) + amt;
+            dailyData[exp.date] = (dailyData[exp.date] || 0) + amt;
 
-                const day = parseInt(exp.date.split('-')[2], 10);
-                const weekIdx = Math.min(Math.floor((day - 1) / 7), 4);
-                weekData[weekIdx] += amt;
-            }
-        });
-    }
-
-    // 2. Mess Payments (Pillar 1)
-    if (state.mealPayments && Array.isArray(state.mealPayments)) {
-        state.mealPayments.forEach(p => {
-            if (p.date && p.date.startsWith(currentMonthKey)) {
-                const amt = Number(p.amount) || 0;
-                totalExpense += amt;
-                count++;
-
-                categoryData['Mess'] = (categoryData['Mess'] || 0) + amt;
-                paymentData[p.paymentMethod || 'UPI'] = (paymentData[p.paymentMethod || 'UPI'] || 0) + amt;
-                dailyData[p.date] = (dailyData[p.date] || 0) + amt;
-
-                const day = parseInt(p.date.split('-')[2], 10);
-                const weekIdx = Math.min(Math.floor((day - 1) / 7), 4);
-                weekData[weekIdx] += amt;
-            }
-        });
-    }
-
-    // 3. Room Rent (Pillar 2)
-    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
-        familyData.roomRent.forEach(r => {
-            const rMonth = r.month || (r.date ? r.date.substring(0, 7) : '');
-            if (rMonth === currentMonthKey || (r.date && r.date.startsWith(currentMonthKey))) {
-                const amt = Number(r.amount) || 0;
-                totalExpense += amt;
-                count++;
-
-                categoryData['PG Rent'] = (categoryData['PG Rent'] || 0) + amt;
-                paymentData[r.paymentMethod || 'UPI'] = (paymentData[r.paymentMethod || 'UPI'] || 0) + amt;
-                const dKey = r.date || `${currentMonthKey}-01`;
-                dailyData[dKey] = (dailyData[dKey] || 0) + amt;
-
-                const day = parseInt(dKey.split('-')[2], 10) || 1;
-                const weekIdx = Math.min(Math.floor((day - 1) / 7), 4);
-                weekData[weekIdx] += amt;
-            }
-        });
-    }
-
-    // 4. Current / Electricity Bill (Pillar 3)
-    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
-        familyData.currentBill.forEach(b => {
-            const bMonth = b.month || (b.date ? b.date.substring(0, 7) : '');
-            if (bMonth === currentMonthKey || (b.date && b.date.startsWith(currentMonthKey))) {
-                const amt = Number(b.amount) || 0;
-                totalExpense += amt;
-                count++;
-
-                categoryData['Electricity'] = (categoryData['Electricity'] || 0) + amt;
-                paymentData[b.paymentMethod || 'UPI'] = (paymentData[b.paymentMethod || 'UPI'] || 0) + amt;
-                const dKey = b.date || `${currentMonthKey}-01`;
-                dailyData[dKey] = (dailyData[dKey] || 0) + amt;
-
-                const day = parseInt(dKey.split('-')[2], 10) || 1;
-                const weekIdx = Math.min(Math.floor((day - 1) / 7), 4);
-                weekData[weekIdx] += amt;
-            }
-        });
-    }
+            // Week calculation (1-7 is week 0, etc)
+            const day = parseInt(exp.date.split('-')[2], 10);
+            const weekIdx = Math.min(Math.floor((day - 1) / 7), 4);
+            weekData[weekIdx] += amt;
+        }
+    });
 
     const now = new Date();
     const isCurrentMonth = getMonthKey(now) === currentMonthKey;
@@ -2472,82 +1978,40 @@ function renderBudget() {
 }
 
 /* ==========================================================================
-   UI Rendering - Income / Money Received
+   UI Rendering - Income
    ========================================================================== */
 function renderIncome() {
-    const now = new Date();
-    const currentMonthKey = getMonthKey(now);
-    const summary = getCentralFinancialSummary(currentMonthKey);
+    const calc = getCalculations();
     
-    document.getElementById('income-total').textContent = formatCurrency(summary.totalReceived);
-    document.getElementById('income-expenses').textContent = formatCurrency(summary.totalSpent);
-    document.getElementById('income-remaining').textContent = formatCurrency(summary.availableMoney);
+    document.getElementById('income-total').textContent = formatCurrency(calc.thisMonthIncome);
+    document.getElementById('income-expenses').textContent = formatCurrency(calc.thisMonthExpense);
+    document.getElementById('income-remaining').textContent = formatCurrency(calc.thisMonthIncome - calc.thisMonthExpense);
     
     const list = document.getElementById('income-list');
     list.innerHTML = '';
     
-    // Combine both Father money transfers and other income records into one unified view
-    const allReceived = [];
+    const sortedIncome = [...state.income].sort((a,b) => new Date(b.date) - new Date(a.date));
     
-    if (familyData.received && Array.isArray(familyData.received)) {
-        familyData.received.forEach(r => {
-            allReceived.push({
-                id: r.id,
-                amount: r.amount,
-                source: 'Father (Family Transfer)',
-                date: r.date,
-                note: r.note || (r.utr ? `UTR: ${r.utr}` : 'Transfer from Father'),
-                isFatherTransfer: true,
-                paymentMethod: r.paymentMethod || 'UPI',
-                utr: r.utr
-            });
-        });
-    }
-
-    if (state.income && Array.isArray(state.income)) {
-        state.income.forEach(inc => {
-            allReceived.push({
-                id: inc.id,
-                amount: inc.amount,
-                source: inc.source || 'Other Income',
-                date: inc.date,
-                note: inc.note || '-',
-                isFatherTransfer: false,
-                paymentMethod: 'UPI'
-            });
-        });
-    }
-
-    allReceived.sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    if (allReceived.length === 0) {
-        list.innerHTML = '<span class="text-secondary">No money received records found.</span>';
+    if(sortedIncome.length === 0) {
+        list.innerHTML = '<span class="text-secondary">No income records found.</span>';
     } else {
-        allReceived.forEach(inc => {
-            const deleteAction = inc.isFatherTransfer 
-                ? `deleteFamilyReceived('${inc.id}')` 
-                : `deleteIncome(${inc.id})`;
-
-            const badge = inc.isFatherTransfer 
-                ? `<span class="method-tag" style="background: rgba(16, 185, 129, 0.12); color: var(--success); font-weight: 600;">Family</span>`
-                : `<span class="method-tag">Income</span>`;
-
+        sortedIncome.forEach(inc => {
             list.innerHTML += `
                 <div class="expense-item">
                     <div class="expense-left">
-                        <div class="cat-icon" style="background-color:rgba(16, 185, 129, 0.1); color:var(--success);"><i class="ph ${inc.isFatherTransfer ? 'ph-hand-coins' : 'ph-money'}"></i></div>
+                        <div class="cat-icon" style="background-color:rgba(16, 185, 129, 0.1); color:var(--success);"><i class="ph ph-money"></i></div>
                         <div class="expense-details">
-                            <span class="expense-title">${inc.source} ${badge}</span>
+                            <span class="expense-title">${inc.source}</span>
                             <div class="expense-meta">
                                 <span>${formatDate(inc.date)}</span> • 
-                                <span>${inc.note}</span>
+                                <span>${inc.note || '-'}</span>
                             </div>
                         </div>
                     </div>
                     <div class="expense-right">
                         <span class="expense-amount income">+${formatCurrency(inc.amount)}</span>
                         <div class="expense-actions">
-                            <button class="action-btn delete" title="Delete" onclick="${deleteAction}"><i class="ph ph-trash"></i></button>
+                            <button class="action-btn delete" onclick="deleteIncome(${inc.id})"><i class="ph ph-trash"></i></button>
                         </div>
                     </div>
                 </div>
@@ -2606,21 +2070,8 @@ function getAllRecordedYears() {
 }
 
 function getAnnualExpenseCalculations(selectedYear = 'all') {
-    // 1. Mess Payments (Actual Cash Paid to Mess): sum from state.mealPayments
-    let totalMessPaid = 0;
-    let messPaymentsCount = 0;
-    if (state.mealPayments && Array.isArray(state.mealPayments)) {
-        state.mealPayments.forEach(p => {
-            const itemYear = (p.date || '').substring(0, 4);
-            if (selectedYear === 'all' || itemYear === selectedYear) {
-                totalMessPaid += Number(p.amount || 0);
-                messPaymentsCount++;
-            }
-        });
-    }
-
-    // Calculated Meal Bill (for reference / liability tracking)
-    let totalMealBill = 0;
+    // 1. Daily Meals: sum cost from state.mealEntries
+    let totalMealCost = 0;
     let totalMealsCount = 0;
     const defaultB = Number(state.mealSettings?.breakfastRate) || 30;
     const defaultL = Number(state.mealSettings?.lunchRate) || 50;
@@ -2635,14 +2086,14 @@ function getAnnualExpenseCalculations(selectedYear = 'all') {
                 const lRate = entry.lunchRate !== undefined ? Number(entry.lunchRate) : defaultL;
                 const dRate = entry.dinnerRate !== undefined ? Number(entry.dinnerRate) : defaultD;
 
-                let count = 0;
-                let cost = 0;
-                if (entry.breakfast) { count++; cost += bRate; }
-                if (entry.lunch) { count++; cost += lRate; }
-                if (entry.dinner) { count++; cost += dRate; }
+                let dayMealsCount = 0;
+                let dayCost = 0;
+                if (entry.breakfast) { dayMealsCount++; dayCost += bRate; }
+                if (entry.lunch) { dayMealsCount++; dayCost += lRate; }
+                if (entry.dinner) { dayMealsCount++; dayCost += dRate; }
 
-                totalMealsCount += count;
-                totalMealBill += (entry.cost !== undefined ? Number(entry.cost) : cost);
+                totalMealsCount += dayMealsCount;
+                totalMealCost += (entry.cost !== undefined ? Number(entry.cost) : dayCost);
             }
         });
     }
@@ -2652,7 +2103,7 @@ function getAnnualExpenseCalculations(selectedYear = 'all') {
     let roomRentCount = 0;
     if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
         familyData.roomRent.forEach(item => {
-            const itemYear = (item.month || item.date || '').substring(0, 4);
+            const itemYear = (item.date || item.month || '').substring(0, 4);
             if (selectedYear === 'all' || itemYear === selectedYear) {
                 totalRoomRent += Number(item.amount || 0);
                 roomRentCount++;
@@ -2665,7 +2116,7 @@ function getAnnualExpenseCalculations(selectedYear = 'all') {
     let currentBillCount = 0;
     if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
         familyData.currentBill.forEach(item => {
-            const itemYear = (item.month || item.date || '').substring(0, 4);
+            const itemYear = (item.date || item.month || '').substring(0, 4);
             if (selectedYear === 'all' || itemYear === selectedYear) {
                 totalCurrentBill += Number(item.amount || 0);
                 currentBillCount++;
@@ -2673,12 +2124,11 @@ function getAnnualExpenseCalculations(selectedYear = 'all') {
         });
     }
 
-    // 4. Daily Regular Expenses: sum from state.expenses (excluding synthetic items)
+    // 4. Daily Regular Expenses: sum from state.expenses
     let totalDailyExpense = 0;
     let dailyExpenseCount = 0;
     if (state.expenses && Array.isArray(state.expenses)) {
         state.expenses.forEach(e => {
-            if (e.isDailyMeal) return; // exclude synthetic
             const itemYear = (e.date || '').substring(0, 4);
             if (selectedYear === 'all' || itemYear === selectedYear) {
                 totalDailyExpense += Number(e.amount || 0);
@@ -2687,7 +2137,7 @@ function getAnnualExpenseCalculations(selectedYear = 'all') {
         });
     }
 
-    // 5. Money received: Father Transfers + Other Income
+    // 5. Money received from father: sum from familyData.received
     let totalReceived = 0;
     let receivedCount = 0;
     if (familyData.received && Array.isArray(familyData.received)) {
@@ -2699,21 +2149,12 @@ function getAnnualExpenseCalculations(selectedYear = 'all') {
             }
         });
     }
-    if (state.income && Array.isArray(state.income)) {
-        state.income.forEach(inc => {
-            const itemYear = (inc.date || '').substring(0, 4);
-            if (selectedYear === 'all' || itemYear === selectedYear) {
-                totalReceived += Number(inc.amount || 0);
-                receivedCount++;
-            }
-        });
-    }
 
-    // Grand Total Actual Cash Spent across 4 Pillars
-    const grandTotal = totalMessPaid + totalRoomRent + totalCurrentBill + totalDailyExpense;
+    // Grand Total
+    const grandTotal = totalMealCost + totalRoomRent + totalCurrentBill + totalDailyExpense;
 
     // Percentages
-    const mealsPct = grandTotal > 0 ? Math.round((totalMessPaid / grandTotal) * 100) : 0;
+    const mealsPct = grandTotal > 0 ? Math.round((totalMealCost / grandTotal) * 100) : 0;
     const rentPct = grandTotal > 0 ? Math.round((totalRoomRent / grandTotal) * 100) : 0;
     const billPct = grandTotal > 0 ? Math.round((totalCurrentBill / grandTotal) * 100) : 0;
     const dailyPct = grandTotal > 0 ? Math.max(0, 100 - mealsPct - rentPct - billPct) : 0;
@@ -2731,9 +2172,7 @@ function getAnnualExpenseCalculations(selectedYear = 'all') {
 
     return {
         selectedYear,
-        totalMessPaid,
-        messPaymentsCount,
-        totalMealBill,
+        totalMealCost,
         totalMealsCount,
         totalRoomRent,
         roomRentCount,
@@ -2789,8 +2228,8 @@ function renderAnnualExpenseSummary(selectedYear = null) {
     const pMeals = document.getElementById('annual-pillar-meals');
     const pMealsCount = document.getElementById('annual-pillar-meals-count');
     const pMealsPct = document.getElementById('annual-pillar-meals-pct');
-    if (pMeals) pMeals.textContent = formatCurrency(calc.totalMessPaid);
-    if (pMealsCount) pMealsCount.textContent = `${calc.messPaymentsCount} ${calc.messPaymentsCount === 1 ? 'payment made' : 'payments made'}`;
+    if (pMeals) pMeals.textContent = formatCurrency(calc.totalMealCost);
+    if (pMealsCount) pMealsCount.textContent = `${calc.totalMealsCount} ${calc.totalMealsCount === 1 ? 'meal taken' : 'meals taken'}`;
     if (pMealsPct) pMealsPct.textContent = `${calc.mealsPct}%`;
 
     const pRent = document.getElementById('annual-pillar-rent');
@@ -3044,137 +2483,23 @@ async function deleteCategory(index) {
    ========================================================================== */
 function exportExcel() {
     const workbook = XLSX.utils.book_new();
-    const now = new Date();
-    const currentMonthKey = getMonthKey(now);
-    const summary = getCentralFinancialSummary(currentMonthKey);
-    const allSummary = getCentralFinancialSummary('all');
 
-    // 1. Central Financial Summary Sheet
-    const summaryData = [
-        { Metric: 'Report Month', Value: now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) },
-        { Metric: 'Money Received (This Month)', Value: summary.totalReceived },
-        { Metric: '  - Father Transfers', Value: summary.receivedFather },
-        { Metric: '  - Other Income / Scholarship', Value: summary.receivedOther },
-        { Metric: 'Money Spent / Paid (This Month)', Value: summary.totalSpent },
-        { Metric: '  - 1. Mess Payments (Cash Paid)', Value: summary.totalMessPaid },
-        { Metric: '  - 2. Room Rent Paid', Value: summary.totalRentPaid },
-        { Metric: '  - 3. Electricity Bill Paid', Value: summary.totalBillPaid },
-        { Metric: '  - 4. Daily Regular Expenses', Value: summary.totalDailyExpense },
-        { Metric: 'Available Money (This Month Net)', Value: summary.availableMoney },
-        { Metric: 'All-Time Available Cash Balance', Value: allSummary.allTimeAvailable },
-        { Metric: 'Pending Dues (Unpaid Liabilities)', Value: summary.totalPendingDue },
-        { Metric: '  - Mess Due', Value: summary.messDue },
-        { Metric: '  - Room Rent Due', Value: summary.rentDue },
-        { Metric: '  - Electricity Due', Value: summary.currentBillDue }
-    ];
-    const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-    XLSX.utils.book_append_sheet(workbook, summarySheet, "Financial Summary");
-
-    // 2. All Spending & Payments Sheet (The 4 Pillars)
-    const allPayments = [];
-
-    // Pillar 4: Daily Expenses
-    if (state.expenses && Array.isArray(state.expenses)) {
-        state.expenses.forEach(e => {
-            if (e.isDailyMeal) return;
-            allPayments.push({
-                Date: e.date,
-                Category: e.category || 'Other',
-                Pillar: 'Daily Regular Expense',
-                Description: e.description || e.category,
-                'Amount (₹)': Number(e.amount || 0),
-                'Payment Method': e.paymentMethod || 'Cash',
-                Reference: '-'
-            });
-        });
+    // 1. Expenses Sheet
+    if (state.expenses.length > 0) {
+        const data = state.expenses.map(e => ({
+            Date: e.date,
+            Category: e.category,
+            Description: e.description || '',
+            Amount: e.amount,
+            'Payment Method': e.paymentMethod,
+            Type: e.type
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Expenses");
     }
 
-    // Pillar 1: Mess Payments
-    if (state.mealPayments && Array.isArray(state.mealPayments)) {
-        state.mealPayments.forEach(p => {
-            allPayments.push({
-                Date: p.date,
-                Category: 'Mess',
-                Pillar: 'Mess Payment',
-                Description: p.note ? `Mess: ${p.note}` : 'Partial Mess Payment',
-                'Amount (₹)': Number(p.amount || 0),
-                'Payment Method': p.paymentMethod || 'UPI',
-                Reference: '-'
-            });
-        });
-    }
-
-    // Pillar 2: Room Rent
-    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
-        familyData.roomRent.forEach(r => {
-            allPayments.push({
-                Date: r.date,
-                Category: 'PG Rent',
-                Pillar: 'Room Rent',
-                Description: `Room Rent (${formatMonthName(r.month)}) - Paid to: ${r.paidTo || 'Owner'}`,
-                'Amount (₹)': Number(r.amount || 0),
-                'Payment Method': r.paymentMethod || 'UPI',
-                Reference: r.utr ? `UTR: ${r.utr}` : '-'
-            });
-        });
-    }
-
-    // Pillar 3: Current Bill
-    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
-        familyData.currentBill.forEach(b => {
-            allPayments.push({
-                Date: b.date,
-                Category: 'Electricity',
-                Pillar: 'Electricity Bill',
-                Description: `Electricity Bill (${formatMonthName(b.month)}) - Paid to: ${b.paidTo || 'Owner'}`,
-                'Amount (₹)': Number(b.amount || 0),
-                'Payment Method': b.paymentMethod || 'UPI',
-                Reference: b.utr ? `UTR: ${b.utr}` : '-'
-            });
-        });
-    }
-
-    if (allPayments.length > 0) {
-        allPayments.sort((a, b) => new Date(b.Date) - new Date(a.Date));
-        const paymentsSheet = XLSX.utils.json_to_sheet(allPayments);
-        XLSX.utils.book_append_sheet(workbook, paymentsSheet, "All Spending Records");
-    }
-
-    // 3. Money Received Sheet (Father Transfers & Income)
-    const allReceived = [];
-    if (familyData.received && Array.isArray(familyData.received)) {
-        familyData.received.forEach(r => {
-            allReceived.push({
-                Date: r.date,
-                Source: 'Father (Family Transfer)',
-                'Amount (₹)': Number(r.amount || 0),
-                'Payment Method': r.paymentMethod || 'UPI',
-                'UTR / Ref': r.utr || 'N/A',
-                Note: r.note || ''
-            });
-        });
-    }
-    if (state.income && Array.isArray(state.income)) {
-        state.income.forEach(inc => {
-            allReceived.push({
-                Date: inc.date,
-                Source: inc.source || 'Other Income',
-                'Amount (₹)': Number(inc.amount || 0),
-                'Payment Method': 'UPI',
-                'UTR / Ref': '-',
-                Note: inc.note || ''
-            });
-        });
-    }
-
-    if (allReceived.length > 0) {
-        allReceived.sort((a, b) => new Date(b.Date) - new Date(a.Date));
-        const receivedSheet = XLSX.utils.json_to_sheet(allReceived);
-        XLSX.utils.book_append_sheet(workbook, receivedSheet, "Money Received");
-    }
-
-    // 4. Daily Meal Entries Sheet
-    const mealEntriesList = Object.values(state.mealEntries || {}).filter(e => e.breakfast || e.lunch || e.dinner);
+    // 2. Meal Entries Sheet
+    const mealEntriesList = Object.values(state.mealEntries).filter(e => e.breakfast || e.lunch || e.dinner);
     if (mealEntriesList.length > 0) {
         mealEntriesList.sort((a, b) => new Date(a.date) - new Date(b.date));
         const mealData = mealEntriesList.map(e => ({
@@ -3188,13 +2513,25 @@ function exportExcel() {
         XLSX.utils.book_append_sheet(workbook, mealWorksheet, "Daily Meals");
     }
 
+    // 3. Meal Payments Sheet
+    if (state.mealPayments.length > 0) {
+        const payData = state.mealPayments.map(p => ({
+            Date: p.date,
+            'Amount Paid (₹)': p.amount,
+            'Payment Method': p.paymentMethod || 'UPI',
+            Note: p.note || ''
+        }));
+        const payWorksheet = XLSX.utils.json_to_sheet(payData);
+        XLSX.utils.book_append_sheet(workbook, payWorksheet, "Meal Payments");
+    }
+
     if (workbook.SheetNames.length === 0) {
         showToast('No data to export', 'error');
         return;
     }
 
     // Download the file
-    XLSX.writeFile(workbook, `PG_Expense_Statement_${getMonthKey(new Date())}.xlsx`);
+    XLSX.writeFile(workbook, `PG_Expenses_and_Meals_${getMonthKey(new Date())}.xlsx`);
     showToast('Excel Downloaded Successfully');
 }
 
@@ -3597,16 +2934,26 @@ function generateMonthlyPDFReport(selectedMonthKey) {
     const monthDate = new Date(y, m - 1, 1);
     const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-    const summary = getCentralFinancialSummary(monthKey);
+    const monthExps = state.expenses.filter(e => e.date && e.date.startsWith(monthKey));
+    const monthIncomes = state.income.filter(i => i.date && i.date.startsWith(monthKey));
+
+    const totalExp = monthExps.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const totalInc = monthIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
     const budget = state.settings.budget || 12000;
+    const netSavings = totalInc - totalExp;
     const daysInMonth = new Date(y, m, 0).getDate();
     const daysPassed = monthKey === getMonthKey(new Date()) ? Math.max(1, new Date().getDate()) : daysInMonth;
-    const avgDaily = summary.totalSpent / daysPassed;
+    const avgDaily = totalExp / daysPassed;
 
     // Category breakdown
-    const sortedCats = Object.entries(summary.categoryTotals).sort((a, b) => b[1] - a[1]);
+    const catMap = {};
+    monthExps.forEach(e => {
+        catMap[e.category] = (catMap[e.category] || 0) + Number(e.amount || 0);
+    });
+    const sortedCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+
     const catRows = sortedCats.map(([cat, amt]) => {
-        const pct = summary.totalSpent > 0 ? ((amt / summary.totalSpent) * 100).toFixed(1) : 0;
+        const pct = totalExp > 0 ? ((amt / totalExp) * 100).toFixed(1) : 0;
         return `
             <tr>
                 <td>${cat}</td>
@@ -3616,102 +2963,40 @@ function generateMonthlyPDFReport(selectedMonthKey) {
         `;
     }).join('');
 
-    // All Itemized Spending Transactions for the month (4 Pillars)
-    const monthPayments = [];
-
-    // Pillar 4: Daily Expenses
-    if (state.expenses && Array.isArray(state.expenses)) {
-        state.expenses.forEach(e => {
-            if (e.isDailyMeal) return;
-            if (e.date && e.date.startsWith(monthKey)) {
-                monthPayments.push({
-                    date: e.date,
-                    category: e.category || 'Other',
-                    description: e.description || e.category,
-                    method: e.paymentMethod || 'Cash',
-                    amount: Number(e.amount || 0)
-                });
-            }
-        });
-    }
-
-    // Pillar 1: Mess Payments
-    if (state.mealPayments && Array.isArray(state.mealPayments)) {
-        state.mealPayments.forEach(p => {
-            if (p.date && p.date.startsWith(monthKey)) {
-                monthPayments.push({
-                    date: p.date,
-                    category: 'Mess',
-                    description: p.note ? `Mess: ${p.note}` : 'Partial Mess Payment',
-                    method: p.paymentMethod || 'UPI',
-                    amount: Number(p.amount || 0)
-                });
-            }
-        });
-    }
-
-    // Pillar 2: Room Rent
-    if (familyData.roomRent && Array.isArray(familyData.roomRent)) {
-        familyData.roomRent.forEach(r => {
-            const rMonth = r.month || (r.date ? r.date.substring(0, 7) : '');
-            if (rMonth === monthKey || (r.date && r.date.startsWith(monthKey))) {
-                monthPayments.push({
-                    date: r.date,
-                    category: 'PG Rent',
-                    description: `Room Rent (${formatMonthName(r.month)}) - To: ${r.paidTo || 'Owner'}`,
-                    method: r.paymentMethod || 'UPI',
-                    amount: Number(r.amount || 0)
-                });
-            }
-        });
-    }
-
-    // Pillar 3: Current Bill
-    if (familyData.currentBill && Array.isArray(familyData.currentBill)) {
-        familyData.currentBill.forEach(b => {
-            const bMonth = b.month || (b.date ? b.date.substring(0, 7) : '');
-            if (bMonth === monthKey || (b.date && b.date.startsWith(monthKey))) {
-                monthPayments.push({
-                    date: b.date,
-                    category: 'Electricity',
-                    description: `Electricity Bill (${formatMonthName(b.month)}) - To: ${b.paidTo || 'Owner'}`,
-                    method: b.paymentMethod || 'UPI',
-                    amount: Number(b.amount || 0)
-                });
-            }
-        });
-    }
-
-    monthPayments.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    const expRows = monthPayments.map((e, idx) => `
+    const expRows = monthExps.map((e, idx) => `
         <tr>
             <td>${idx + 1}</td>
             <td>${formatDate(e.date)}</td>
             <td>${e.category}</td>
-            <td>${e.description}</td>
-            <td>${e.method}</td>
+            <td>${e.description || '-'}</td>
+            <td>${e.paymentMethod || 'Cash'}</td>
             <td style="text-align: right; font-weight: bold;">${formatCurrency(e.amount)}</td>
         </tr>
     `).join('');
 
-    // Mess breakdown if any
+    // Meal Calculations for the month
+    const monthMealDates = Object.keys(state.mealEntries).filter(d => d.startsWith(monthKey) && state.mealEntries[d]?.cost > 0);
     let mealSectionHtml = '';
-    if (summary.totalMealsCount > 0 || summary.totalMealBill > 0) {
+    if (monthMealDates.length > 0) {
+        const daysInM = new Date(y, m, 0).getDate();
+        const startOfM = `${monthKey}-01`;
+        const endOfM = `${monthKey}-${String(daysInM).padStart(2, '0')}`;
+        const mealCalc = getMealCalculations(startOfM, endOfM);
+        
         mealSectionHtml = `
-            <div class="statement-section-title">Daily Mess Meals & Liability Summary</div>
+            <div class="statement-section-title">Daily Mess Meals & Payments Summary</div>
             <div class="statement-summary-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 15px;">
                 <div class="summary-box">
-                    <span>Meals Taken (Month)</span>
-                    <strong>${summary.totalMealsCount} meals taken</strong>
+                    <span>Meals (Breakfast/Lunch/Dinner)</span>
+                    <strong>${mealCalc.totalBreakfasts}B / ${mealCalc.totalLunches}L / ${mealCalc.totalDinners}D (${mealCalc.totalMealsCount} total)</strong>
                 </div>
                 <div class="summary-box">
-                    <span>Calculated Meal Bill</span>
-                    <strong style="color: #4f46e5;">${formatCurrency(summary.totalMealBill)}</strong>
+                    <span>Total Meal Bill</span>
+                    <strong style="color: #4f46e5;">${formatCurrency(mealCalc.totalMealBill)}</strong>
                 </div>
                 <div class="summary-box">
-                    <span>Mess Paid & Due</span>
-                    <strong>Paid: ${formatCurrency(summary.totalMessPaid)} | Due: ${formatCurrency(summary.messDue)}</strong>
+                    <span>Payments & Remaining Due</span>
+                    <strong>Paid: ${formatCurrency(mealCalc.totalPaid)} | Due: ${formatCurrency(mealCalc.remainingDue)}</strong>
                 </div>
             </div>
         `;
@@ -3724,7 +3009,7 @@ function generateMonthlyPDFReport(selectedMonthKey) {
         <div class="statement-header">
             <div class="statement-brand">
                 <h1>Expense PG</h1>
-                <p>Student Financial Statement & Money Flow Summary</p>
+                <p>Student Financial Statement & Expense Summary</p>
             </div>
             <div class="statement-meta">
                 <p><strong>Student Name:</strong> ${state.settings.userName || 'Student'}</p>
@@ -3735,44 +3020,24 @@ function generateMonthlyPDFReport(selectedMonthKey) {
 
         <div class="statement-summary-grid">
             <div class="summary-box">
-                <span>Total Money Received</span>
-                <strong style="color: #10b981;">${formatCurrency(summary.totalReceived)}</strong>
+                <span>Monthly Budget</span>
+                <strong>${formatCurrency(budget)}</strong>
             </div>
             <div class="summary-box">
-                <span>Total Money Spent / Paid</span>
-                <strong style="color: #ef4444;">${formatCurrency(summary.totalSpent)}</strong>
+                <span>Total Income / Allowance</span>
+                <strong style="color: #10b981;">${formatCurrency(totalInc)}</strong>
             </div>
             <div class="summary-box">
-                <span>Available Cash Balance</span>
-                <strong style="color: ${summary.availableMoney >= 0 ? '#10b981' : '#ef4444'};">${formatCurrency(summary.availableMoney)}</strong>
+                <span>Total Expenses</span>
+                <strong style="color: #ef4444;">${formatCurrency(totalExp)}</strong>
             </div>
             <div class="summary-box">
-                <span>Total Pending Dues</span>
-                <strong style="color: #f59e0b;">${formatCurrency(summary.totalPendingDue)}</strong>
+                <span>Net Balance / Savings</span>
+                <strong style="color: ${netSavings >= 0 ? '#10b981' : '#ef4444'};">${formatCurrency(netSavings)}</strong>
             </div>
         </div>
 
         ${mealSectionHtml}
-
-        <div class="statement-section-title">Where Did My Money Go? (4 Core Pillars)</div>
-        <div class="statement-summary-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 15px;">
-            <div class="summary-box">
-                <span>Mess Payments</span>
-                <strong>${formatCurrency(summary.totalMessPaid)} (${summary.messPct}%)</strong>
-            </div>
-            <div class="summary-box">
-                <span>Room Rent</span>
-                <strong>${formatCurrency(summary.totalRentPaid)} (${summary.rentPct}%)</strong>
-            </div>
-            <div class="summary-box">
-                <span>Current Bill</span>
-                <strong>${formatCurrency(summary.totalBillPaid)} (${summary.billPct}%)</strong>
-            </div>
-            <div class="summary-box">
-                <span>Daily Expenses</span>
-                <strong>${formatCurrency(summary.totalDailyExpense)} (${summary.dailyPct}%)</strong>
-            </div>
-        </div>
 
         <div class="statement-section-title">Category-wise Expenditure</div>
         <table class="statement-table">
@@ -3788,7 +3053,7 @@ function generateMonthlyPDFReport(selectedMonthKey) {
             </tbody>
         </table>
 
-        <div class="statement-section-title">Itemized Spending Records (${monthPayments.length} transactions)</div>
+        <div class="statement-section-title">Itemized Transactions (${monthExps.length} records)</div>
         <table class="statement-table">
             <thead>
                 <tr>
@@ -3808,7 +3073,7 @@ function generateMonthlyPDFReport(selectedMonthKey) {
         <div class="statement-footer">
             <div>
                 <p>Generated automatically via Expense PG Manager</p>
-                <p>Daily Average Spent: ${formatCurrency(avgDaily)}/day</p>
+                <p>Daily Average: ${formatCurrency(avgDaily)}/day</p>
             </div>
             <div class="statement-signature">
                 <div class="signature-line"></div>
