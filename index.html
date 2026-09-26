@@ -169,14 +169,231 @@
                     </div>
                 </header>
 
+                <!-- 1. Mobile-First Hero Balance Card: "আমার কাছে এখন কত টাকা আছে?" -->
+                <div class="mobile-balance-hero-card" id="dash-available-card">
+                    <div class="hero-top-row">
+                        <div class="hero-label-group">
+                            <span class="hero-title"><i class="ph ph-wallet"></i> Available Money</span>
+                            <span class="hero-sub">Cash in hand & Bank balance</span>
+                        </div>
+                        <div class="hero-badge-status" id="dash-hero-status"><i class="ph ph-check-circle"></i> Ready to spend</div>
+                    </div>
+                    
+                    <div class="hero-amount-display">
+                        <h1 class="hero-amount-val" id="dash-available-money">₹0</h1>
+                    </div>
+
+                    <!-- Quick 3-Metric Cash Flow Bar -->
+                    <div class="hero-flow-bar">
+                        <div class="hero-flow-item received" onclick="renderView('income')" title="View Money Received">
+                            <span class="flow-item-label"><i class="ph ph-arrow-down-left"></i> Received</span>
+                            <span class="flow-item-val" id="dash-total-received">₹0</span>
+                        </div>
+                        <div class="flow-divider"></div>
+                        <div class="hero-flow-item spent" onclick="renderView('expenses')" title="View Spent & Payments">
+                            <span class="flow-item-label"><i class="ph ph-arrow-up-right"></i> Spent / Paid</span>
+                            <span class="flow-item-val" id="dash-total-spent">₹0</span>
+                        </div>
+                        <div class="flow-divider"></div>
+                        <div class="hero-flow-item dues" onclick="document.getElementById('dash-pending-dues-panel')?.scrollIntoView({behavior:'smooth'})" title="View Pending Liabilities">
+                            <span class="flow-item-label"><i class="ph ph-hourglass-high"></i> Total Due</span>
+                            <span class="flow-item-val" id="dash-total-dues">₹0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. "Where Did My Money Go?" Section (Clean Vertical Mobile List) -->
+                <div class="card dash-money-destination-card">
+                    <div class="dest-card-header">
+                        <div class="dest-header-title">
+                            <i class="ph ph-pie-chart"></i>
+                            <div>
+                                <h3>Where Did My Money Go?</h3>
+                                <p class="dest-sub">Actual money spent & paid across 4 core pillars</p>
+                            </div>
+                        </div>
+                        <div class="dest-period-badge" id="dash-dest-period-label">This Month</div>
+                    </div>
+
+                    <!-- Vertical 4-Pillars List (Mobile Optimized) -->
+                    <div class="dest-vertical-list">
+                        <!-- Pillar 1: Mess -->
+                        <div class="dest-list-row p-mess" onclick="renderView('daily-meals')" title="Click to open Daily Meals & Mess">
+                            <div class="dest-list-icon icon-mess"><i class="ph ph-cooking-pot"></i></div>
+                            <div class="dest-list-info">
+                                <div class="dest-list-top">
+                                    <span class="dest-list-name">Daily Meals</span>
+                                    <span class="dest-list-amount" id="dash-dest-mess">₹0</span>
+                                </div>
+                                <div class="dest-list-bar-wrap">
+                                    <div class="dest-list-bar seg-mess" id="dash-bar-mess" style="width: 25%;"></div>
+                                </div>
+                                <div class="dest-list-meta">
+                                    <span>Food bills</span>
+                                    <span class="dest-list-pct" id="dash-dest-mess-pct">0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pillar 2: Room Rent -->
+                        <div class="dest-list-row p-rent" onclick="renderView('family-transfer')" title="Click to open Room Rent">
+                            <div class="dest-list-icon icon-rent"><i class="ph ph-house"></i></div>
+                            <div class="dest-list-info">
+                                <div class="dest-list-top">
+                                    <span class="dest-list-name">Room Rent</span>
+                                    <span class="dest-list-amount" id="dash-dest-rent">₹0</span>
+                                </div>
+                                <div class="dest-list-bar-wrap">
+                                    <div class="dest-list-bar seg-rent" id="dash-bar-rent" style="width: 25%;"></div>
+                                </div>
+                                <div class="dest-list-meta">
+                                    <span>PG Room Rent</span>
+                                    <span class="dest-list-pct" id="dash-dest-rent-pct">0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pillar 3: Current Bill -->
+                        <div class="dest-list-row p-bill" onclick="renderView('family-transfer')" title="Click to open Current Bill">
+                            <div class="dest-list-icon icon-bill"><i class="ph ph-lightning"></i></div>
+                            <div class="dest-list-info">
+                                <div class="dest-list-top">
+                                    <span class="dest-list-name">Current Bill</span>
+                                    <span class="dest-list-amount" id="dash-dest-bill">₹0</span>
+                                </div>
+                                <div class="dest-list-bar-wrap">
+                                    <div class="dest-list-bar seg-bill" id="dash-bar-bill" style="width: 25%;"></div>
+                                </div>
+                                <div class="dest-list-meta">
+                                    <span>Electricity</span>
+                                    <span class="dest-list-pct" id="dash-dest-bill-pct">0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pillar 4: Daily Expenses -->
+                        <div class="dest-list-row p-daily" onclick="renderView('expenses')" title="Click to open Regular Expenses">
+                            <div class="dest-list-icon icon-daily"><i class="ph ph-receipt"></i></div>
+                            <div class="dest-list-info">
+                                <div class="dest-list-top">
+                                    <span class="dest-list-name">Daily Expenses</span>
+                                    <span class="dest-list-amount" id="dash-dest-daily">₹0</span>
+                                </div>
+                                <div class="dest-list-bar-wrap">
+                                    <div class="dest-list-bar seg-daily" id="dash-bar-daily" style="width: 25%;"></div>
+                                </div>
+                                <div class="dest-list-meta">
+                                    <span>General spending</span>
+                                    <span class="dest-list-pct" id="dash-dest-daily-pct">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visual Segmented Bar -->
+                    <div class="dest-bar-container mt-2">
+                        <div class="dest-progress-bar">
+                            <div class="dest-seg seg-mess" id="dash-bar-full-mess" style="width: 25%;" title="Mess"></div>
+                            <div class="dest-seg seg-rent" id="dash-bar-full-rent" style="width: 25%;" title="Rent"></div>
+                            <div class="dest-seg seg-bill" id="dash-bar-full-bill" style="width: 25%;" title="Current"></div>
+                            <div class="dest-seg seg-daily" id="dash-bar-full-daily" style="width: 25%;" title="Daily"></div>
+                        </div>
+                    </div>
+
+                    <div class="dest-summary-footer">
+                        <div class="dest-footer-stat">
+                            <span>Total Spent:</span>
+                            <strong id="dash-dest-total-spent">₹0</strong>
+                        </div>
+                        <div class="dest-footer-stat">
+                            <span>Remaining Cash:</span>
+                            <strong id="dash-dest-available" style="color: var(--success);">₹0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Pending Liabilities & Dues (Separate clean section) -->
+                <div class="card dash-pending-dues-card" id="dash-pending-dues-panel">
+                    <div class="dues-card-header">
+                        <div class="dues-header-left">
+                            <i class="ph ph-warning-circle dues-alert-icon"></i>
+                            <div>
+                                <h4>Pending Liabilities & Dues</h4>
+                                <p class="dues-sub">Unpaid bills to settle (does not reduce available cash until paid)</p>
+                            </div>
+                        </div>
+                        <span class="dues-total-badge" id="dash-dues-total-badge">Total Due: ₹0</span>
+                    </div>
+
+                    <div class="dues-items-vertical">
+                        <div class="due-item-row">
+                            <div class="due-item-left">
+                                <div class="due-icon-badge icon-mess"><i class="ph ph-cooking-pot"></i></div>
+                                <div>
+                                    <span class="due-row-title">Mess Bill Due</span>
+                                    <span class="due-row-sub">Calculated meal consumption</span>
+                                </div>
+                            </div>
+                            <div class="due-item-right">
+                                <h3 class="due-box-amount" id="dash-due-mess-val">₹0</h3>
+                                <button class="secondary-btn btn-xs" onclick="renderView('daily-meals')">Pay Mess</button>
+                            </div>
+                        </div>
+
+                        <div class="due-item-row">
+                            <div class="due-item-left">
+                                <div class="due-icon-badge icon-rent"><i class="ph ph-house"></i></div>
+                                <div>
+                                    <span class="due-row-title">Room Rent Due</span>
+                                    <span class="due-row-sub">Monthly PG rent balance</span>
+                                </div>
+                            </div>
+                            <div class="due-item-right">
+                                <h3 class="due-box-amount" id="dash-due-rent-val">₹0</h3>
+                                <button class="secondary-btn btn-xs" onclick="renderView('family-transfer')">Pay Rent</button>
+                            </div>
+                        </div>
+
+                        <div class="due-item-row">
+                            <div class="due-item-left">
+                                <div class="due-icon-badge icon-bill"><i class="ph ph-lightning"></i></div>
+                                <div>
+                                    <span class="due-row-title">Current Bill Due</span>
+                                    <span class="due-row-sub">Electricity bill balance</span>
+                                </div>
+                            </div>
+                            <div class="due-item-right">
+                                <h3 class="due-box-amount" id="dash-due-bill-val">₹0</h3>
+                                <button class="secondary-btn btn-xs" onclick="renderView('family-transfer')">Pay Bill</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Recent Transactions on Dashboard (Easy to Scan on Mobile) -->
+                <div class="card dash-recent-txns-card">
+                    <div class="card-header-flex">
+                        <div class="header-title-wrap">
+                            <i class="ph ph-receipt"></i>
+                            <h3>Recent Transactions</h3>
+                        </div>
+                        <button class="text-link-btn" onclick="renderView('expenses')">
+                            <span>View All</span> <i class="ph ph-arrow-right"></i>
+                        </button>
+                    </div>
+                    <div class="recent-txns-list" id="dash-recent-txns-list">
+                        <!-- Populated by JS with clean mobile transaction items -->
+                    </div>
+                </div>
+
+                <!-- 5. Budget & Today Overview -->
                 <div class="dashboard-grid">
-                    <!-- Summary Cards -->
                     <div class="summary-card">
                         <p class="card-title">Today's Expense</p>
                         <h2 class="card-value" id="dash-today">₹0</h2>
                     </div>
-                    <div class="summary-card highlight-card">
-                        <p class="card-title">This Month</p>
+                    <div class="summary-card">
+                        <p class="card-title">This Month Spent</p>
                         <h2 class="card-value" id="dash-month">₹0</h2>
                     </div>
                     <div class="summary-card">
@@ -861,7 +1078,7 @@
             <section id="daily-meals" class="page-section hidden">
                 <header class="section-header meal-header">
                     <div>
-                        <h1>Daily Meals & Mess Payments</h1>
+                        <h1>Daily Meals & Payments</h1>
                         <p class="current-date">Mark daily breakfast, lunch, dinner & manage partial mess payments</p>
                     </div>
                     <div class="header-actions meal-header-actions">
